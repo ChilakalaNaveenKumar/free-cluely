@@ -16,6 +16,7 @@ export type Config = {
   redactRegex: string[]
   extractDiagrams: boolean
   opacity: number
+  blur: boolean // frosted background; off = plain see-through tint
   windowBounds?: { x: number; y: number; width: number; height: number }
   gcpProject: string
   gcpRegion: string
@@ -32,7 +33,8 @@ const DEFAULTS: Config = {
   redact: [],
   redactRegex: [],
   extractDiagrams: true,
-  opacity: 0.6,
+  opacity: 0.45,
+  blur: false,
   gcpProject: process.env.GOOGLE_CLOUD_PROJECT || "",
   gcpRegion: "global",
   answerModel: "claude-opus-5-5",

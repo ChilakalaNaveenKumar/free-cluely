@@ -25,8 +25,8 @@ export class WindowHelper {
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
-      vibrancy: "hud", // frosted blur: what's behind stays vaguely visible but text stays readable
-      visualEffectState: "active",
+      ...(getConfig().blur ? { vibrancy: "hud" as const, visualEffectState: "active" as const } : {}), // frosted blur hides what's behind
+
       roundedCorners: true,
       hasShadow: false,
       focusable: false,
