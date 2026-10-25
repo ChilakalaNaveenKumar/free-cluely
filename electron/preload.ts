@@ -16,5 +16,6 @@ contextBridge.exposeInMainWorld("copilot", {
   openThread: (id: string) => ipcRenderer.invoke("open-thread", id),
   ready: () => ipcRenderer.invoke("ready"),
   hover: (on: boolean) => ipcRenderer.send("hover", on),
-  action: (key: string) => ipcRenderer.send("action", key)
+  action: (key: string) => ipcRenderer.send("action", key),
+  drag: (phase: "start" | "move" | "end", x = 0, y = 0) => ipcRenderer.send("drag", phase, x, y)
 })

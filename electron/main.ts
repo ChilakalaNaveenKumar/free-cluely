@@ -74,6 +74,7 @@ const handlers: AnswerHandlers = {
     push()
   },
   onDone: (t) => {
+    if (!overlay.visible) tray?.setTitle("SC ●") // an answer is waiting in the hidden panel
     log(`answered: thread "${t.title}", iteration ${t.iterations.length}`)
     showThread(t)
     state.live = ""
@@ -152,7 +153,10 @@ const keys: Record<string, () => void> = {
     enqueue(async () => {
       if (!(await assistant.joinPrevious(handlers))) notice("Nothing to move back")
     }),
-  H: () => overlay.toggleVisible(),
+  H: () => {
+    overlay.toggleVisible()
+    if (overlay.visible) tray?.setTitle("SC")
+  },
   I: () => {
     overlay.setInteractive(!overlay.interactive)
     notice(overlay.interactive ? "Interactive: drag, scroll, click" : "Click-through")
@@ -228,6 +232,9 @@ function createTray(): void {
 
 ipcMain.handle("ready", () => push())
 ipcMain.on("hover", (_e, on: boolean) => overlay.setHover(on))
+ipcMain.on("drag", (_e, phase: "start" | "move" | "end", x: number, y: number) =>
+  phase === "start" ? overlay.dragStart(x, y) : phase === "move" ? overlay.dragMove(x, y) : overlay.dragEnd()
+)
 ipcMain.on("action", (_e, key: string) => keys[key]?.())
 ipcMain.handle("ask", (_e, q: string) => {
   state.asking = false
@@ -247,6 +254,10 @@ ipcMain.handle("open-thread", (_e, id: string) => {
 })
 
 if (process.env.SC_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.SC_DEBUG_PORT)
+// One copy only: macOS "Quit & Reopen" after granting a permission, or a second start, would
+// otherwise stack a second panel on top of the first.
+if (!app.requestSingleInstanceLock()) app.exit(0)
+app.on("second-instance", () => overlay.show())
 app.dock?.hide()
 app.whenReady().then(() => {
   loadConfig()
@@ -280,7 +291,7 @@ async function checkScreenPermission(): Promise<void> {
   state.status = "error"
   state.error =
     "Screenshots need Screen Recording permission. In System Settings → Privacy & Security → Screen & System Audio Recording, " +
-    `turn on "${app.isPackaged ? app.getName() : "Electron"}", then run bin/sc restart.`
+    "turn on \"Screen Copilot Overlay\", then run bin/sc restart."
   push()
   shell.openExternal(SCREEN_SETTINGS)
 }

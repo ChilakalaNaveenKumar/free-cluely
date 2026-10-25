@@ -9,7 +9,8 @@ const startUrl = isDev ? "http://localhost:5180" : `file://${path.join(__dirname
 export class WindowHelper {
   private win: BrowserWindow | null = null
   public interactive = false
-  private visible = true
+  public visible = true
+  private dragFrom: { mx: number; my: number; wx: number; wy: number } | null = null
 
   create(): BrowserWindow {
     const saved = getConfig().windowBounds
@@ -60,10 +61,37 @@ export class WindowHelper {
     return this.win
   }
 
+  // Hidden stays hidden: nothing but show() (hotkey, tray, second launch) brings the panel back.
+  show(): void {
+    this.visible = true
+    this.win?.showInactive()
+  }
+
+  hide(): void {
+    this.visible = false
+    this.setHover(false)
+    this.win?.hide()
+  }
+
   toggleVisible(): void {
+    this.visible ? this.hide() : this.show()
+  }
+
+  // Drag by the header: app-region dragging doesn't work on a non-focusable panel, so move it ourselves.
+  dragStart(mx: number, my: number): void {
     if (!this.win) return
-    this.visible = !this.visible
-    this.visible ? this.win.showInactive() : this.win.hide()
+    const [wx, wy] = this.win.getPosition()
+    this.dragFrom = { mx, my, wx, wy }
+  }
+
+  dragMove(mx: number, my: number): void {
+    if (!this.win || !this.dragFrom) return
+    const d = this.dragFrom
+    this.win.setPosition(Math.round(d.wx + mx - d.mx), Math.round(d.wy + my - d.my))
+  }
+
+  dragEnd(): void {
+    this.dragFrom = null
   }
 
   // Interactive: clicks land on the overlay (drag, scroll, buttons). Otherwise they pass through.

@@ -9,10 +9,11 @@ HOME_DIR="$HOME/.screen-copilot"
 PLIST="$HOME_DIR/$LABEL.plist"
 LOGIN_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME_DIR/app.log"
-BUNDLE="$APP_DIR/release/mac-arm64/Screen Copilot.app"
-# The packaged app has its own name and signature, so macOS lists it as "Screen Copilot" in
-# Screen Recording instead of sharing the "Electron" entry with every other Electron project.
-BIN="$BUNDLE/Contents/MacOS/Screen Copilot"
+# A renamed, signed copy of Electron that runs the repo's code. It has its own Screen Recording
+# entry ("Screen Copilot Overlay") and is never rebuilt, so the permission survives code updates
+# (an ad-hoc signature changes with every rebuild, and macOS ties the permission to it).
+BUNDLE="$HOME_DIR/Screen Copilot Overlay.app"
+BIN="$BUNDLE/Contents/MacOS/Electron"
 DOMAIN="gui/$(id -u)"
 
 write_plist() {
@@ -20,6 +21,9 @@ write_plist() {
   # Vertex login: the service account your shell uses (no re-auth expiry); without it the app
   # falls back to the gcloud user login, which Workspace makes you renew.
   CREDS_ENTRY=""
+  # SC_DEBUG_PORT (local devtools port) only when set for a test run
+  [ -n "${SC_DEBUG_PORT:-}" ] && CREDS_ENTRY_DBG="
+    <key>SC_DEBUG_PORT</key><string>$SC_DEBUG_PORT</string>" || CREDS_ENTRY_DBG=""
   if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
     CREDS_ENTRY="
     <key>GOOGLE_APPLICATION_CREDENTIALS</key><string>$GOOGLE_APPLICATION_CREDENTIALS</string>"
@@ -31,12 +35,12 @@ write_plist() {
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>$BIN</string></array>
+  <array><string>$BIN</string><string>$APP_DIR</string></array>
   <key>WorkingDirectory</key><string>$APP_DIR</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>NODE_ENV</key><string>production</string>
-    <key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin</string>$CREDS_ENTRY
+    <key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin</string>$CREDS_ENTRY$CREDS_ENTRY_DBG
   </dict>
   <key>RunAtLoad</key><true/>
   <!-- restart after a crash, but not after Quit from the menu bar -->
@@ -56,15 +60,25 @@ build() {
   [ -x native/bin/ocr ] || npm run -s build:ocr
   npx vite build >/dev/null
   npx tsc -p electron/tsconfig.json
-  CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac dir >/dev/null
-  codesign --force --deep -s - "$BUNDLE" # stable local signature; Screen Recording permission is tied to it
+}
+
+make_bundle() {
+  mkdir -p "$HOME_DIR"
+  cp -R "$APP_DIR/node_modules/electron/dist/Electron.app" "$BUNDLE"
+  local plist="$BUNDLE/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.screencopilot.overlay" "$plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleName Screen Copilot Overlay" "$plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Screen Copilot Overlay" "$plist" 2>/dev/null ||
+    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Screen Copilot Overlay" "$plist"
+  codesign --force --deep -s - "$BUNDLE" >/dev/null 2>&1
 }
 
 case "${1:-status}" in
   build) build && echo "built" ;;
   start)
     running && { echo "already running"; exit 0; }
-    [ -x "$BIN" ] || build
+    [ -x "$BIN" ] || make_bundle
+    [ -f "$APP_DIR/dist/index.html" ] || build
     write_plist
     launchctl bootstrap "$DOMAIN" "$PLIST"
     echo "started (logs: $LOG)"

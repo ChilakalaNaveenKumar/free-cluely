@@ -28,6 +28,7 @@ declare global {
       ready: () => Promise<void>
       hover: (on: boolean) => void
       action: (key: string) => void
+      drag: (phase: "start" | "move" | "end", x?: number, y?: number) => void
     }
   }
 }
@@ -71,6 +72,7 @@ export default function App() {
   const [q, setQ] = useState("")
   const body = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
+  const dragging = useRef(false)
   const now = useNow(!!s?.group.closesAt)
 
   useEffect(() => {
@@ -88,7 +90,26 @@ export default function App() {
   }, [s?.asking])
 
   if (!s) return null
-  const hit = { onMouseEnter: () => window.copilot.hover(true), onMouseLeave: () => window.copilot.hover(false) }
+  // the header and rail take the mouse while hovered; during a drag keep it even if the pointer outruns the panel
+  const hit = {
+    onMouseEnter: () => window.copilot.hover(true),
+    onMouseLeave: () => !dragging.current && window.copilot.hover(false)
+  }
+  const drag = {
+    onPointerDown: (e: React.PointerEvent) => {
+      if ((e.target as HTMLElement).closest("button")) return
+      dragging.current = true
+      e.currentTarget.setPointerCapture(e.pointerId)
+      window.copilot.drag("start", e.screenX, e.screenY)
+    },
+    onPointerMove: (e: React.PointerEvent) => dragging.current && window.copilot.drag("move", e.screenX, e.screenY),
+    onPointerUp: (e: React.PointerEvent) => {
+      dragging.current = false
+      window.copilot.drag("end")
+      const r = e.currentTarget.getBoundingClientRect()
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) window.copilot.hover(false)
+    }
+  }
   const its = s.thread?.iterations ?? []
   const idx = s.viewIndex < 0 ? its.length - 1 : s.viewIndex
   const showing = s.live || its[idx]?.answer || ""
@@ -97,7 +118,7 @@ export default function App() {
   return (
     <div className={`panel ${s.interactive ? "interactive" : ""}`} style={{ ["--tint" as string]: s.opacity }}>
       {/* only the header and the scroll rail take the mouse; clicks anywhere else reach the app behind */}
-      <header {...hit} onWheel={(e) => body.current?.scrollBy({ top: e.deltaY })}>
+      <header {...hit} {...drag} onWheel={(e) => body.current?.scrollBy({ top: e.deltaY })}>
         <span className={`dot ${s.status}`} />
         <span className="title">{s.thread?.title ?? "No thread yet"}</span>
         {its.length > 0 && (
@@ -125,6 +146,9 @@ export default function App() {
           </button>
           <button title="New thread (⌃⌥⌘N)" onClick={() => window.copilot.action("N")}>
             ＋
+          </button>
+          <button className="hide" title="Hide panel — bring it back with ⌃⌥⌘H or the SC menu" onClick={() => window.copilot.action("H")}>
+            ✕
           </button>
         </span>
       </header>
