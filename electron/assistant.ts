@@ -140,6 +140,7 @@ export class Assistant {
   async handleGroup(group: Extracted[], h: AnswerHandlers): Promise<void> {
     const markdown = group.map((g, i) => (group.length > 1 ? `## Screenshot ${i + 1}\n\n` : "") + g.markdown).join("\n\n")
     h.onStatus("routing")
+    const tRoute = Date.now()
     let thread = this.current
     const from = this.current
     const routeErr = (fallback: { same: boolean; title: string }) => (e: unknown) => {
@@ -155,6 +156,7 @@ export class Assistant {
       else if (thread.title === "New problem") thread.title = r.title
     }
     this.forceNew = false
+    console.log(`[timing] routing ${((Date.now() - tRoute) / 1000).toFixed(1)}s`)
     this.lastRouted = { group, from, to: thread }
     this.current = thread
     h.onThread(thread, thread !== from)
@@ -209,6 +211,7 @@ export class Assistant {
       ])
     const messages: MessageParam[] = [...history, { role: "user", content: it.user }]
     h.onStatus("thinking")
+    const tAsk = Date.now()
     const { answerModel, effort } = getConfig()
     const stream = this.vertex().messages.stream({
       model: answerModel,
@@ -221,11 +224,15 @@ export class Assistant {
     })
     let streamed = ""
     stream.on("text", (delta) => {
-      if (!streamed) h.onStatus("answering")
+      if (!streamed) {
+        h.onStatus("answering")
+        console.log(`[timing] first words after ${((Date.now() - tAsk) / 1000).toFixed(1)}s`)
+      }
       streamed += delta
       h.onDelta(streamed)
     })
     const msg = await stream.finalMessage()
+    console.log(`[timing] full answer after ${((Date.now() - tAsk) / 1000).toFixed(1)}s, ${msg.usage.output_tokens} output tokens`)
     if (msg.stop_reason === "refusal") {
       it.answer = "_The model declined to answer this one._"
     } else {

@@ -110,7 +110,9 @@ const inbox = new Inbox({
       state.status = "reading"
       state.error = null
       push()
+      const tRead = Date.now()
       const group = await Promise.all(files.map((f) => pending.get(f) ?? extract(f)))
+      console.log(`[timing] reading screenshots ${((Date.now() - tRead) / 1000).toFixed(1)}s`)
       files.forEach((f) => pending.delete(f))
       const redactions = group.reduce((a, g) => a + g.redactions, 0)
       state.payload =
