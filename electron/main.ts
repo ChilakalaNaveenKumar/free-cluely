@@ -1,5 +1,5 @@
 import { app, desktopCapturer, globalShortcut, ipcMain, Menu, shell, systemPreferences, Tray, nativeImage } from "electron"
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { Assistant, AnswerHandlers, Thread } from "./assistant"
@@ -254,6 +254,18 @@ ipcMain.handle("open-thread", (_e, id: string) => {
 })
 
 if (process.env.SC_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.SC_DEBUG_PORT)
+// Opened outside the service (Finder, Spotlight, macOS "Quit & Reopen" after a permission grant):
+// that copy lacks the service's environment (Vertex login, log file), so start the service and exit.
+const SERVICE_PLIST = path.join(HOME_DIR, "com.screencopilot.app.plist")
+if (!process.env.SC_SERVICE && app.isPackaged && fs.existsSync(SERVICE_PLIST)) {
+  const domain = `gui/${process.getuid?.()}`
+  spawn("/bin/sh", ["-c", `sleep 1; /bin/launchctl kickstart ${domain}/com.screencopilot.app || /bin/launchctl bootstrap ${domain} "${SERVICE_PLIST}"`], {
+    detached: true,
+    stdio: "ignore"
+  }).unref()
+  app.exit(0)
+}
+
 // One copy only: macOS "Quit & Reopen" after granting a permission, or a second start, would
 // otherwise stack a second panel on top of the first.
 if (!app.requestSingleInstanceLock()) app.exit(0)
@@ -286,7 +298,9 @@ async function checkScreenPermission(): Promise<void> {
   const ok = await canCapture()
   log(`screen capture self-test: ${ok ? "ok" : "failed"} (macOS reports ${systemPreferences.getMediaAccessStatus("screen")})`)
   if (ok) return
-  // asking for a source list makes macOS show its prompt and list the app in System Settings
+  // Apple's request call (run as our child, so it counts for this app) shows the system prompt
+  // and lists the app in System Settings; the source list is a fallback that sometimes does too
+  execFile(path.join(__dirname, "..", "native", "bin", "screen-access"), (_e, out) => log(`screen access request: ${String(out).trim() || "failed"}`))
   await desktopCapturer.getSources({ types: ["screen"] }).catch((): Electron.DesktopCapturerSource[] => [])
   state.status = "error"
   state.error =

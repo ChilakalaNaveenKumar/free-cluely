@@ -15,7 +15,7 @@
     "watch": "tsc -p electron/tsconfig.json --watch",
     "start": "npm run app:dev",
     "dist": "npm run app:build",
-    "build:ocr": "mkdir -p native/bin && swiftc -parse-as-library -O native/ocr.swift -o native/bin/ocr",
+    "build:ocr": "mkdir -p native/bin && swiftc -parse-as-library -O native/ocr.swift -o native/bin/ocr && swiftc -O native/screen-access.swift -o native/bin/screen-access",
     "service": "bin/sc",
     "app:package": "npm run build && tsc -p electron/tsconfig.json && electron-builder --mac dir"
   },
