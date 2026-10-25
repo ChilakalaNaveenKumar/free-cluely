@@ -11,7 +11,7 @@ LOGIN_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME_DIR/app.log"
 # "Screen Copilot.app" is signed once and never rebuilt: inside it a fixed starter loads this
 # repo's code, so code updates don't change its signature and the Screen Recording grant lasts.
-BUNDLE="$HOME_DIR/Screen Copilot.app"
+BUNDLE="/Applications/Screen Copilot.app"
 BIN="$BUNDLE/Contents/MacOS/Screen Copilot"
 DOMAIN="gui/$(id -u)"
 
