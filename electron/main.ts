@@ -1,4 +1,4 @@
-import { app, globalShortcut, ipcMain, Menu, shell, Tray, nativeImage } from "electron"
+import { app, desktopCapturer, globalShortcut, ipcMain, Menu, shell, systemPreferences, Tray, nativeImage } from "electron"
 import path from "node:path"
 import { Assistant, AnswerHandlers, Thread } from "./assistant"
 import { captureArea, clearArea, pickArea } from "./capture"
@@ -114,7 +114,12 @@ const inbox = new Inbox({
 
 // Keyed by hotkey (⌃⌥⌘ + key); the panel buttons and tray menu call the same entries.
 const keys: Record<string, () => void> = {
-  S: () => captureArea().catch(fail),
+  S: () =>
+    captureArea()
+      .then(() => {
+        if (state.error?.startsWith("Screenshots need")) (state.error = null), (state.status = "idle"), push()
+      })
+      .catch((e) => (/could not create image/.test(String(e)) ? checkScreenPermission() : fail(e))),
   A: () => {
     overlay.setHover(false) // the picker covers the panel, so its mouse-leave never fires
     pickArea().then((a) => {
@@ -247,7 +252,24 @@ app.whenReady().then(() => {
   registerShortcuts()
   inbox.start()
   showThread(assistant.current)
+  checkScreenPermission()
 })
+
+const SCREEN_SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+
+// screencapture runs as this app, so it needs Screen Recording permission; asking for a source list
+// makes macOS show its prompt and list the app in System Settings.
+async function checkScreenPermission(): Promise<void> {
+  if (systemPreferences.getMediaAccessStatus("screen") === "granted") return
+  await desktopCapturer.getSources({ types: ["screen"] }).catch((): Electron.DesktopCapturerSource[] => [])
+  if (systemPreferences.getMediaAccessStatus("screen") === "granted") return
+  state.status = "error"
+  state.error =
+    "Screenshots need Screen Recording permission. In System Settings → Privacy & Security → Screen & System Audio Recording, " +
+    `turn on "${app.isPackaged ? app.getName() : "Electron"}", then restart Screen Copilot.`
+  push()
+  shell.openExternal(SCREEN_SETTINGS)
+}
 
 app.on("will-quit", () => globalShortcut.unregisterAll())
 app.on("window-all-closed", () => {
