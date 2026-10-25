@@ -27,6 +27,7 @@ declare global {
       closeAsk: () => Promise<void>
       ready: () => Promise<void>
       hover: (on: boolean) => void
+      action: (key: string) => void
     }
   }
 }
@@ -87,19 +88,16 @@ export default function App() {
   }, [s?.asking])
 
   if (!s) return null
+  const hit = { onMouseEnter: () => window.copilot.hover(true), onMouseLeave: () => window.copilot.hover(false) }
   const its = s.thread?.iterations ?? []
   const idx = s.viewIndex < 0 ? its.length - 1 : s.viewIndex
   const showing = s.live || its[idx]?.answer || ""
   const secs = s.group.closesAt ? Math.max(0, Math.ceil((s.group.closesAt - now) / 1000)) : 0
 
   return (
-    <div
-      className={`panel ${s.interactive ? "interactive" : ""}`}
-      style={{ ["--tint" as string]: s.opacity }}
-      onMouseEnter={() => window.copilot.hover(true)}
-      onMouseLeave={() => window.copilot.hover(false)}
-    >
-      <header>
+    <div className={`panel ${s.interactive ? "interactive" : ""}`} style={{ ["--tint" as string]: s.opacity }}>
+      {/* only the header and the scroll rail take the mouse; clicks anywhere else reach the app behind */}
+      <header {...hit} onWheel={(e) => body.current?.scrollBy({ top: e.deltaY })}>
         <span className={`dot ${s.status}`} />
         <span className="title">{s.thread?.title ?? "No thread yet"}</span>
         {its.length > 0 && (
@@ -113,7 +111,27 @@ export default function App() {
           </span>
         )}
         {s.group.paused && <span className="pill warn">paused</span>}
+        <span className="tools">
+          <button title="Choose capture area (⌃⌥⌘A)" onClick={() => window.copilot.action("A")}>
+            ⌖ Area
+          </button>
+          {s.area && (
+            <button title="Capture the whole screen instead (⌃⌥⌘⇧A)" onClick={() => window.copilot.action("Shift+A")}>
+              ⛶
+            </button>
+          )}
+          <button title="Screenshot now (⌃⌥⌘S)" onClick={() => window.copilot.action("S")}>
+            📷
+          </button>
+          <button title="New thread (⌃⌥⌘N)" onClick={() => window.copilot.action("N")}>
+            ＋
+          </button>
+          <button title="Hide panel (⌃⌥⌘H)" onClick={() => window.copilot.action("H")}>
+            ✕
+          </button>
+        </span>
       </header>
+      <div className="rail" {...hit} onWheel={(e) => body.current?.scrollBy({ top: e.deltaY })} />
 
       {s.notice && <div className="notice">{s.notice}</div>}
       {s.status !== "idle" && s.status !== "error" && <div className="status">{STATUS[s.status]}</div>}

@@ -27,6 +27,7 @@ body {
 }
 
 .panel {
+  position: relative;
   height: 100%;
   box-sizing: border-box;
   display: flex;
@@ -49,6 +50,39 @@ header {
   border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
   min-width: 0;
+}
+
+.tools {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  -webkit-app-region: no-drag;
+}
+.tools button {
+  font: 12px -apple-system, sans-serif;
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.08);
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 7px;
+  cursor: pointer;
+  text-shadow: none;
+}
+.tools button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* thin strip on the right edge: scroll the answer with the trackpad without blocking clicks elsewhere */
+.rail {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  cursor: ns-resize;
+}
+.rail:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .title {
