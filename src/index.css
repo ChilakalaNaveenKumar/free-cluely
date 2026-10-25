@@ -243,6 +243,14 @@ header {
   border-radius: 3px;
 }
 
+.thinking {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.thinking strong {
+  color: var(--muted);
+}
+
 .payload {
   white-space: pre-wrap;
   font: 12px/1.45 ui-monospace, Menlo, monospace;

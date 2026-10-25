@@ -49,8 +49,9 @@ export class Inbox {
     if (this.files.length === 0) this.startedAt = now
     this.files.push(file)
     this.h.onFile(file)
+    // every screenshot restarts the full quiet gap; maxGroupSeconds 0 means no overall cap
     const { quietSeconds, maxGroupSeconds } = getConfig()
-    const remainingMax = this.startedAt + maxGroupSeconds * 1000 - now
+    const remainingMax = maxGroupSeconds > 0 ? this.startedAt + maxGroupSeconds * 1000 - now : Infinity
     this.schedule(Math.max(0, Math.min(quietSeconds * 1000, remainingMax)))
   }
 

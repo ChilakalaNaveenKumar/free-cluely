@@ -24,6 +24,8 @@ const state = {
   thread: null as null | { id: string; title: string; iterations: { at: number; kind: string; answer: string; diagrams: number }[] },
   viewIndex: -1, // -1 follows the latest answer
   live: "",
+  statusSince: 0, // when the current step started, for the elapsed-time display
+  thinking: "", // Opus's live thinking summary until the answer starts
   asking: false,
   interactive: false,
   area: null as ReturnType<typeof getConfig>["area"],
@@ -61,16 +63,23 @@ function showThread(t: Thread | null): void {
 const handlers: AnswerHandlers = {
   onStatus: (s) => {
     state.status = s
+    state.statusSince = Date.now()
     push()
   },
   onThread: (t, isNew) => {
     showThread(t)
     state.viewIndex = -1
     state.live = ""
+    state.thinking = ""
     notice(isNew ? `✦ New thread: ${t.title}` : `↻ Continuing: ${t.title} — iteration ${t.iterations.length + 1}`)
+  },
+  onThinking: (summary) => {
+    state.thinking = summary
+    push()
   },
   onDelta: (text) => {
     state.live = text
+    state.thinking = ""
     push()
   },
   onDone: (t) => {
@@ -78,6 +87,7 @@ const handlers: AnswerHandlers = {
     log(`answered: thread "${t.title}", iteration ${t.iterations.length}`)
     showThread(t)
     state.live = ""
+    state.thinking = ""
     state.status = "idle"
     push()
   }
@@ -92,6 +102,7 @@ function fail(err: unknown): void {
   state.status = "error"
   state.error = err instanceof Error ? err.message : String(err)
   state.live = ""
+  state.thinking = ""
   push()
 }
 
@@ -108,6 +119,7 @@ const inbox = new Inbox({
     enqueue(async () => {
       log(`group closed: ${files.length} screenshot(s)`)
       state.status = "reading"
+      state.statusSince = Date.now()
       state.error = null
       push()
       const tRead = Date.now()

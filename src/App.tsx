@@ -10,6 +10,8 @@ type State = {
   thread: { id: string; title: string; iterations: Iteration[] } | null
   viewIndex: number
   live: string
+  thinking: string
+  statusSince: number
   asking: boolean
   interactive: boolean
   area: { width: number; height: number } | null
@@ -73,7 +75,7 @@ export default function App() {
   const body = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const dragging = useRef(false)
-  const now = useNow(!!s?.group.closesAt)
+  const now = useNow(!!s?.group.closesAt || (!!s && s.status !== "idle" && s.status !== "error"))
 
   useEffect(() => {
     const off1 = window.copilot.onState(setS)
@@ -88,6 +90,10 @@ export default function App() {
   useEffect(() => {
     if (s?.asking) input.current?.focus()
   }, [s?.asking])
+
+  useEffect(() => {
+    if (s?.thinking && !s.live) body.current?.scrollTo({ top: body.current.scrollHeight })
+  }, [s?.thinking, s?.live])
 
   if (!s) return null
   // the header and rail take the mouse while hovered; during a drag keep it even if the pointer outruns the panel
@@ -128,7 +134,7 @@ export default function App() {
         )}
         {s.group.count > 0 && (
           <span className="pill accent">
-            📸 {s.group.count} · {secs}s
+            {s.group.count} screenshot{s.group.count > 1 ? "s" : ""} · sending in {secs}s
           </span>
         )}
         {s.group.paused && <span className="pill warn">paused</span>}
@@ -155,7 +161,11 @@ export default function App() {
       <div className="rail" {...hit} onWheel={(e) => body.current?.scrollBy({ top: e.deltaY })} />
 
       {s.notice && <div className="notice">{s.notice}</div>}
-      {s.status !== "idle" && s.status !== "error" && <div className="status">{STATUS[s.status]}</div>}
+      {s.status !== "idle" && s.status !== "error" && (
+        <div className="status">
+          {STATUS[s.status]} {s.statusSince ? `${Math.max(0, Math.floor((now - s.statusSince) / 1000))}s` : ""}
+        </div>
+      )}
       {s.error && <div className="error">{s.error}</div>}
 
       <div className="body" ref={body}>
@@ -164,6 +174,11 @@ export default function App() {
             <div className="label">Last text sent to the model</div>
             <pre className="payload">{s.payload ?? "Nothing sent yet."}</pre>
           </>
+        ) : s.thinking && !s.live ? (
+          <div className="thinking">
+            <div className="label">Thinking…</div>
+            <Markdown text={s.thinking} />
+          </div>
         ) : showing ? (
           <Markdown text={showing} />
         ) : (

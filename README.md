@@ -33,7 +33,7 @@ Settings live in `~/.screen-copilot/config.json` and are re-read on save:
 |---|---|
 | `inboxDir` | folder X: every image that lands here is processed (default `~/ScreenCopilot/inbox`) |
 | `area` | saved capture area; `null` = the whole screen under the cursor |
-| `quietSeconds` / `maxGroupSeconds` | a group closes after 50s with no new shot, or 120s at most |
+| `quietSeconds` / `maxGroupSeconds` | a group closes 20s after the last screenshot (each new one restarts the wait); `maxGroupSeconds` 0 = no overall cap |
 | `redact` / `redactRegex` | phrases (case- and spacing-insensitive) and regexes removed before anything is sent |
 | `extractDiagrams` | send diagram regions as cropped images |
 | `opacity` | panel tint over the blurred background |

@@ -217,10 +217,16 @@ export class Assistant {
       model: answerModel,
       max_tokens: 64000,
       system: SYSTEM,
-      thinking: { type: "adaptive" },
+      thinking: { type: "adaptive", display: "summarized" }, // readable summary streams to the panel while it thinks
       output_config: { effort },
       cache_control: { type: "ephemeral" }, // whole thread prefix is reused on the next iteration
       messages
+    })
+    let thought = false
+    stream.on("thinking", (_delta, snapshot) => {
+      if (!thought) console.log(`[timing] thinking summary starts after ${((Date.now() - tAsk) / 1000).toFixed(1)}s`)
+      thought = true
+      h.onThinking(snapshot)
     })
     let streamed = ""
     stream.on("text", (delta) => {
@@ -248,6 +254,7 @@ export class Assistant {
 export type AnswerHandlers = {
   onStatus: (s: "routing" | "thinking" | "answering") => void
   onThread: (t: Thread, isNew: boolean) => void
+  onThinking: (summary: string) => void
   onDelta: (text: string) => void
   onDone: (t: Thread) => void
 }

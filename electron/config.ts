@@ -11,7 +11,7 @@ export type Config = {
   inboxDir: string // "folder X": every image that lands here is processed
   area: Area | null // saved capture area in screen points; null = display under the cursor
   quietSeconds: number // a group closes after this long with no new screenshot
-  maxGroupSeconds: number // a group never waits longer than this
+  maxGroupSeconds: number // a group never waits longer than this; 0 = no cap
   redact: string[] // exact phrases, matched case-insensitively
   redactRegex: string[]
   extractDiagrams: boolean
@@ -28,8 +28,8 @@ export type Config = {
 const DEFAULTS: Config = {
   inboxDir: path.join(os.homedir(), "ScreenCopilot", "inbox"),
   area: null,
-  quietSeconds: 50,
-  maxGroupSeconds: 120,
+  quietSeconds: 20,
+  maxGroupSeconds: 0,
   redact: [],
   redactRegex: [],
   extractDiagrams: true,
