@@ -126,9 +126,6 @@ export default function App() {
           <button title="New thread (⌃⌥⌘N)" onClick={() => window.copilot.action("N")}>
             ＋
           </button>
-          <button title="Hide panel (⌃⌥⌘H)" onClick={() => window.copilot.action("H")}>
-            ✕
-          </button>
         </span>
       </header>
       <div className="rail" {...hit} onWheel={(e) => body.current?.scrollBy({ top: e.deltaY })} />
