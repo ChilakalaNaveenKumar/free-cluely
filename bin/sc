@@ -53,7 +53,9 @@ write_plist() {
 EOF
 }
 
-running() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
+# loaded = launchd knows the service; running = its process is alive (after Quit it stays loaded)
+loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
+running() { launchctl print "$DOMAIN/$LABEL" 2>/dev/null | grep -qE "^\s+pid = [0-9]+"; }
 
 build() {
   cd "$APP_DIR"
@@ -86,14 +88,18 @@ case "${1:-status}" in
     running && { echo "already running"; exit 0; }
     [ -x "$BIN" ] || make_bundle
     [ -f "$APP_DIR/dist/index.html" ] || build
-    write_plist
-    launchctl bootstrap "$DOMAIN" "$PLIST"
+    if loaded; then
+      launchctl kickstart "$DOMAIN/$LABEL" # quit earlier: still registered, just start it again
+    else
+      write_plist
+      launchctl bootstrap "$DOMAIN" "$PLIST"
+    fi
     echo "started (logs: $LOG)"
     ;;
   stop)
-    if running; then
+    if loaded; then
       launchctl bootout "$DOMAIN/$LABEL"
-      for _ in $(seq 1 50); do running || break; sleep 0.2; done # bootout returns before launchd is done
+      for _ in $(seq 1 50); do loaded || break; sleep 0.2; done # bootout returns before launchd is done
       echo "stopped"
     else echo "not running"; fi
     ;;
