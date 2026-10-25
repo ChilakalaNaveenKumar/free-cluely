@@ -15,7 +15,8 @@
     "watch": "tsc -p electron/tsconfig.json --watch",
     "start": "npm run app:dev",
     "dist": "npm run app:build",
-    "build:ocr": "mkdir -p native/bin && swiftc -parse-as-library -O native/ocr.swift -o native/bin/ocr"
+    "build:ocr": "mkdir -p native/bin && swiftc -parse-as-library -O native/ocr.swift -o native/bin/ocr",
+    "service": "bin/sc"
   },
   "build": {
     "appId": "com.screen-copilot.app",

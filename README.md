@@ -2,6 +2,19 @@
 
 A fork of [free-cluely](https://github.com/Prat011/free-cluely). Take screenshots with a hotkey or a mouse button. They are grouped, turned into text and diagram crops on your Mac, redacted, and answered by Claude Opus on Vertex AI. The answer appears in an overlay that screen shares and recordings don't capture.
 
+## Run it in the background
+
+```bash
+bin/sc start      # runs as a background service (no terminal needed); survives closing this session
+bin/sc status     # running? starts at login?
+bin/sc logs       # follow the log (screenshot added / group closed / answered / errors)
+bin/sc stop       # quit it
+bin/sc restart    # after pulling changes: bin/sc build && bin/sc restart
+bin/sc login on   # also start it when you log in (off by default)
+```
+
+Run `bin/sc start` from your normal terminal: it passes your `GOOGLE_APPLICATION_CREDENTIALS` (service account) to the service, so Vertex keeps working without re-signing in.
+
 ## Setup
 
 ```bash

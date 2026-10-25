@@ -72,11 +72,16 @@ const handlers: AnswerHandlers = {
     push()
   },
   onDone: (t) => {
+    log(`answered: thread "${t.title}", iteration ${t.iterations.length}`)
     showThread(t)
     state.live = ""
     state.status = "idle"
     push()
   }
+}
+
+function log(msg: string): void {
+  console.log(`[${new Date().toISOString()}] ${msg}`)
 }
 
 function fail(err: unknown): void {
@@ -92,9 +97,13 @@ function enqueue(job: () => Promise<void>): void {
 }
 
 const inbox = new Inbox({
-  onFile: (file) => pending.set(file, extract(file)),
+  onFile: (file) => {
+    log(`screenshot added: ${path.basename(file)}`)
+    pending.set(file, extract(file))
+  },
   onGroup: (files) =>
     enqueue(async () => {
+      log(`group closed: ${files.length} screenshot(s)`)
       state.status = "reading"
       state.error = null
       push()
@@ -247,7 +256,8 @@ app.whenReady().then(() => {
     }
     push()
   })
-  overlay.create()
+  log(`starting (${process.env.NODE_ENV ?? "production"})`)
+  overlay.create().webContents.on("did-finish-load", () => log("panel loaded"))
   createTray()
   registerShortcuts()
   inbox.start()
