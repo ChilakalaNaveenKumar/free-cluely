@@ -1,4 +1,6 @@
 import { app, desktopCapturer, globalShortcut, ipcMain, Menu, shell, systemPreferences, Tray, nativeImage } from "electron"
+import { execFile } from "node:child_process"
+import fs from "node:fs"
 import path from "node:path"
 import { Assistant, AnswerHandlers, Thread } from "./assistant"
 import { captureArea, clearArea, pickArea } from "./capture"
@@ -270,15 +272,27 @@ const SCREEN_SETTINGS = "x-apple.systempreferences:com.apple.preference.security
 // screencapture runs as this app, so it needs Screen Recording permission; asking for a source list
 // makes macOS show its prompt and list the app in System Settings.
 async function checkScreenPermission(): Promise<void> {
-  if (systemPreferences.getMediaAccessStatus("screen") === "granted") return
+  const ok = await canCapture()
+  log(`screen capture self-test: ${ok ? "ok" : "failed"} (macOS reports ${systemPreferences.getMediaAccessStatus("screen")})`)
+  if (ok) return
+  // asking for a source list makes macOS show its prompt and list the app in System Settings
   await desktopCapturer.getSources({ types: ["screen"] }).catch((): Electron.DesktopCapturerSource[] => [])
-  if (systemPreferences.getMediaAccessStatus("screen") === "granted") return
   state.status = "error"
   state.error =
     "Screenshots need Screen Recording permission. In System Settings → Privacy & Security → Screen & System Audio Recording, " +
-    `turn on "${app.isPackaged ? app.getName() : "Electron"}", then restart Screen Copilot.`
+    `turn on "${app.isPackaged ? app.getName() : "Electron"}", then run bin/sc restart.`
   push()
   shell.openExternal(SCREEN_SETTINGS)
+}
+
+// The permission API misreports for ad-hoc signed Electron on recent macOS; a 10×10 capture is the real test.
+function canCapture(): Promise<boolean> {
+  const file = path.join(app.getPath("temp"), `sc-selftest-${process.pid}.png`)
+  return new Promise((resolve) =>
+    execFile("/usr/sbin/screencapture", ["-x", "-R", "0,0,10,10", file], (err) => {
+      fs.rm(file, { force: true }, () => resolve(!err))
+    })
+  )
 }
 
 app.on("will-quit", () => globalShortcut.unregisterAll())

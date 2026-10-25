@@ -9,7 +9,10 @@ HOME_DIR="$HOME/.screen-copilot"
 PLIST="$HOME_DIR/$LABEL.plist"
 LOGIN_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME_DIR/app.log"
-ELECTRON="$APP_DIR/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+BUNDLE="$APP_DIR/release/mac-arm64/Screen Copilot.app"
+# The packaged app has its own name and signature, so macOS lists it as "Screen Copilot" in
+# Screen Recording instead of sharing the "Electron" entry with every other Electron project.
+BIN="$BUNDLE/Contents/MacOS/Screen Copilot"
 DOMAIN="gui/$(id -u)"
 
 write_plist() {
@@ -28,7 +31,7 @@ write_plist() {
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>$ELECTRON</string><string>$APP_DIR</string></array>
+  <array><string>$BIN</string></array>
   <key>WorkingDirectory</key><string>$APP_DIR</string>
   <key>EnvironmentVariables</key>
   <dict>
@@ -50,16 +53,18 @@ running() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
 
 build() {
   cd "$APP_DIR"
+  [ -x native/bin/ocr ] || npm run -s build:ocr
   npx vite build >/dev/null
   npx tsc -p electron/tsconfig.json
-  [ -x native/bin/ocr ] || npm run -s build:ocr
+  CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac dir >/dev/null
+  codesign --force --deep -s - "$BUNDLE" # stable local signature; Screen Recording permission is tied to it
 }
 
 case "${1:-status}" in
   build) build && echo "built" ;;
   start)
     running && { echo "already running"; exit 0; }
-    [ -f "$APP_DIR/dist/index.html" ] || build
+    [ -x "$BIN" ] || build
     write_plist
     launchctl bootstrap "$DOMAIN" "$PLIST"
     echo "started (logs: $LOG)"
