@@ -99,24 +99,83 @@ function tableMd(rows: string[][]): string {
 
 type Atom = { box: Box; text: string; para: number; md?: string } // md set = ready-made block (list/table)
 type Row = { top: number; bottom: number; atoms: Atom[] }
+type Region = { atoms: Atom[]; label: string | null; panel: number }
 
-// Split into vertical strips only where a gutter runs the full height (sidebars, side-by-side panes).
-function strips(atoms: Atom[], width: number): Atom[][] {
-  const cov = new Uint8Array(Math.ceil(width) + 1)
-  for (const a of atoms) for (let x = Math.floor(a.box[0]); x < Math.ceil(a.box[0] + a.box[2]); x++) cov[x] = 1
-  const minGap = width * 0.025
-  const cuts: number[] = []
-  let run = 0
-  let seenInk = false
-  for (let x = 0; x < cov.length; x++) {
-    if (cov[x]) {
-      if (seenInk && run >= minGap) cuts.push(x - run / 2)
-      seenInk = true
-      run = 0
-    } else run++
+// OCR reads icons as stray symbols ("†i‡", "<>", "©"); drop those and strip them off the front of labels.
+const ICON_LEAD = /^[\s©®†‡<>~^¶§%!&•·*#|]+(?=[A-Za-z0-9])/
+function clean(text: string): string | null {
+  const t = text.replace(ICON_LEAD, "").trim()
+  return (t.match(/[A-Za-z0-9]/g) ?? []).length < 2 ? null : t
+}
+
+const bbox = (atoms: Atom[]): Box => {
+  const x0 = Math.min(...atoms.map((a) => a.box[0])), y0 = Math.min(...atoms.map((a) => a.box[1]))
+  const x1 = Math.max(...atoms.map((a) => a.box[0] + a.box[2])), y1 = Math.max(...atoms.map((a) => a.box[1] + a.box[3]))
+  return [x0, y0, x1 - x0, y1 - y0]
+}
+
+// Gaps in coverage along one axis, as cut positions.
+function gaps(atoms: Atom[], axis: 0 | 1, minGap: number): { at: number; size: number }[] {
+  const spans = atoms.map((a) => [a.box[axis], a.box[axis] + a.box[axis + 2]]).sort((p, q) => p[0] - q[0])
+  const cuts: { at: number; size: number }[] = []
+  let end = spans[0][1]
+  for (const [s, e] of spans.slice(1)) {
+    if (s - end >= minGap) cuts.push({ at: (s + end) / 2, size: s - end })
+    end = Math.max(end, e)
   }
-  const bounds = [0, ...cuts, Infinity]
-  return bounds.slice(1).map((end, i) => atoms.filter((a) => a.box[0] >= bounds[i] && a.box[0] < end)).filter((s) => s.length)
+  return cuts
+}
+
+const split = (atoms: Atom[], axis: 0 | 1, cuts: number[]): Atom[][] => {
+  const bounds = [-Infinity, ...cuts, Infinity]
+  return bounds.slice(1).map((end, i) => atoms.filter((a) => a.box[axis] >= bounds[i] && a.box[axis] < end)).filter((g) => g.length)
+}
+
+// Side-by-side columns whose lines sit on the same rows are a form or table, not separate panels.
+// Tight tolerance on the shorter column: dense code beside a file tree lines up only by chance.
+function rowAligned(cols: Atom[][], lineH: number): boolean {
+  const [short, long] = cols[0].length <= cols[1].length ? cols : [cols[1], cols[0]]
+  const mids = long.map((a) => a.box[1] + a.box[3] / 2)
+  if (long.length > 1.4 * short.length) return false // a form's columns have about as many rows
+  const hit = short.filter((a) => mids.some((m) => Math.abs(m - (a.box[1] + a.box[3] / 2)) < 0.4 * lineH)).length
+  return hit / short.length > 0.7
+}
+
+// Recursive XY-cut: split into side-by-side panels where possible, otherwise into bands, and recurse.
+// The first panel split names each panel; everything nested inside keeps that name and panel id.
+let panelSeq = 0
+function regions(atoms: Atom[], width: number, lineH: number, label: string | null = null, panel = -1, depth = 0): Region[] {
+  if (atoms.length < 2 || depth > 6) return [{ atoms, label, panel }]
+  // wide gutters always split; narrower ones (a heading close to a column) only outside code,
+  // where aligned trailing comments leave gaps inside lines
+  const codeHeavy = atoms.filter((a) => CODE_SYMBOL.test(a.text) || CODE_KEYWORD.test(a.text)).length / atoms.length > 0.5
+  const wide = Math.max(width * 0.02, 2 * lineH)
+  const vg = gaps(atoms, 0, 1.2 * lineH).filter((g) => g.size >= wide || !codeHeavy)
+  // neighbouring columns that share rows (label | value) stay together; split only between the rest
+  const cols: Atom[][] = []
+  for (const c of split(atoms, 0, vg.map((g) => g.at))) {
+    const prev = cols[cols.length - 1]
+    if (prev && rowAligned([prev, c], lineH)) cols[cols.length - 1] = [...prev, ...c]
+    else cols.push(c)
+  }
+  if (cols.length > 1) {
+    const widths = cols.map((c) => bbox(c)[2])
+    const main = widths.indexOf(Math.max(...widths))
+    // only columns that run a good part of the height are panels; a lone button at the edge is not
+    const h = bbox(atoms)[3]
+    const real = cols.filter((c) => bbox(c)[3] >= 0.3 * h).length >= 2
+    return cols.flatMap((c, i) => {
+      if (label || !real) return regions(c, width, lineH, label, panel, depth + 1)
+      const own = i === main ? "Main" : i < main ? "Left panel" : "Right panel"
+      return regions(c, width, lineH, own, panelSeq++, depth + 1)
+    })
+  }
+  // only the big gaps (under a header, between sections), so a sidebar's spacing doesn't slice the page
+  const hg = gaps(atoms, 1, 1.2 * lineH)
+  const big = Math.max(0, ...hg.map((g) => g.size))
+  const bands = split(atoms, 1, hg.filter((g) => g.size >= 0.6 * big).map((g) => g.at))
+  if (bands.length < 2) return [{ atoms, label, panel }]
+  return bands.flatMap((b) => regions(b, width, lineH, label, panel, depth + 1))
 }
 
 function rows(atoms: Atom[]): Row[] {
@@ -131,10 +190,45 @@ function rows(atoms: Atom[]): Row[] {
     } else out.push({ top: a.box[1], bottom: a.box[1] + a.box[3], atoms: [a] })
   }
   for (const r of out) r.atoms.sort((p, q) => p.box[0] - q.box[0])
-  return out.sort((p, q) => p.top - q.top)
+  // editor line numbers: a leading number in most rows is gutter, not content
+  const numbered = out.filter((r) => r.atoms.length > 1 && /^\d{1,5}$/.test(r.atoms[0].text)).length
+  if (numbered >= 3 && numbered / out.length > 0.5) for (const r of out) if (r.atoms.length > 1 && /^\d{1,5}$/.test(r.atoms[0].text)) r.atoms.shift()
+  return out.filter((r) => !(r.atoms.length === 1 && /^\d{1,5}$/.test(r.atoms[0].text) && numbered >= 3))
 }
 
-function stripMarkdown(rs: Row[], lineH: number): string[] {
+// "Type:" "Bug" "Resolution:" "Fixed" → "Type: Bug · Resolution: Fixed"
+function fieldRow(atoms: Atom[]): string | null {
+  if (!atoms.some((a) => /:$/.test(a.text))) return null
+  const parts: string[] = []
+  for (let i = 0; i < atoms.length; i++) {
+    if (/:$/.test(atoms[i].text) && atoms[i + 1] && !/:$/.test(atoms[i + 1].text))
+      parts.push(`${atoms[i].text} ${atoms[++i].text.replace(/^- /, "")}`)
+    else parts.push(atoms[i].text)
+  }
+  return parts.join(" · ")
+}
+
+// A narrow panel of short single items (file tree, nav) reads best as an indented list.
+function treeList(rs: Row[], lineH: number): string | null {
+  const items = rs.filter((r) => !r.atoms[0].md)
+  if (items.length < 3 || items.some((r) => r.atoms.length > 2 || r.atoms[0].text.length > 48)) return null
+  // indent levels = distinct start positions (icons shift each name a little, so group nearby ones)
+  const xs = [...new Set(items.map((r) => Math.round(r.atoms[0].box[0])))].sort((a, b) => a - b)
+  const stops: number[] = []
+  for (const x of xs) if (!stops.length || x - stops[stops.length - 1] > 0.3 * lineH) stops.push(x)
+  const levelOf = (x: number) => stops.filter((st) => st <= x + 0.3 * lineH).length - 1
+  const raw = items.map((r) => levelOf(r.atoms[0].box[0]))
+  // a tree goes at most one level deeper per item; the first item is the root
+  let level = 0
+  return items
+    .map((r, i) => {
+      if (i > 0) level = Math.max(0, Math.min(level + 1, level + raw[i] - raw[i - 1]))
+      return "  ".repeat(level) + "- " + r.atoms.map((a) => a.text).join(" · ")
+    })
+    .join("\n")
+}
+
+function regionMarkdown(rs: Row[], lineH: number): string[] {
   const out: string[] = []
   let i = 0
   while (i < rs.length) {
@@ -144,14 +238,19 @@ function stripMarkdown(rs: Row[], lineH: number): string[] {
       i++
       continue
     }
-    // rows with the same number (2+) of cells in a row form a table
     const n = r.atoms.length
     if (n >= 2) {
+      const field = fieldRow(r.atoms)
+      if (field) {
+        out.push(field)
+        i++
+        continue
+      }
+      // rows with the same number (2+) of cells in a row form a table
       let j = i
-      while (j < rs.length && rs[j].atoms.length === n && !rs[j].atoms[0].md) j++
-      if (j - i >= 2) {
-        out.push(tableMd(rs.slice(i, j).map((x) => x.atoms.map((a) => a.text))))
-      } else out.push(r.atoms.map((a) => a.text).join(" · "))
+      while (j < rs.length && rs[j].atoms.length === n && !rs[j].atoms[0].md && !fieldRow(rs[j].atoms)) j++
+      if (j - i >= 2) out.push(tableMd(rs.slice(i, j).map((x) => x.atoms.map((a) => a.text))))
+      else out.push(r.atoms.map((a) => a.text).join(" · "))
       i = Math.max(j, i + 1)
       continue
     }
@@ -188,26 +287,84 @@ function stripMarkdown(rs: Row[], lineH: number): string[] {
   return out
 }
 
+// Editors colour keywords separately, so OCR splits a code line into pieces; a region that is
+// mostly code is rebuilt row by row (pieces re-joined by their gaps) as one block.
+function codeRegion(rs: Row[]): string | null {
+  const plain = rs.filter((r) => !r.atoms[0].md)
+  if (plain.length < 4) return null
+  const line = (r: Row) => r.atoms.map((a) => a.text).join(" ")
+  const codeish = plain.filter((r) => CODE_SYMBOL.test(line(r)) || CODE_KEYWORD.test(line(r))).length
+  if (codeish / plain.length < 0.6) return null
+  const charW = median(plain.flatMap((r) => r.atoms.map((a) => a.box[2] / Math.max(1, a.text.length)))) || 8
+  const lineH = median(plain.map((r) => r.bottom - r.top)) || 20
+  const minX = Math.min(...plain.map((r) => r.atoms[0].box[0]))
+  const body: string[] = []
+  plain.forEach((r, i) => {
+    if (i > 0 && r.top - plain[i - 1].bottom > 0.9 * lineH) body.push("") // blank source line
+    let text = " ".repeat(Math.max(0, Math.round((r.atoms[0].box[0] - minX) / charW)))
+    r.atoms.forEach((a, k) => {
+      if (k > 0) {
+        const prev = r.atoms[k - 1]
+        text += " ".repeat(Math.max(1, Math.round((a.box[0] - prev.box[0] - prev.box[2]) / charW)))
+      }
+      text += a.text
+    })
+    body.push(text)
+  })
+  return "```\n" + body.join("\n") + "\n```"
+}
+
 function toMarkdown(ocr: Ocr, skip: Box[]): string {
   const keep = (b: Box) => !skip.some((s) => inside(b, s))
-  const blocks: Atom[] = [
-    ...ocr.tables.filter((t) => keep(t.box)).map((t) => ({ box: t.box, text: "", para: -1, md: tableMd(t.rows) })),
-    ...ocr.lists
-      .filter((l) => keep(l.box))
-      .map((l) => ({ box: l.box, text: "", para: -1, md: l.items.map((i) => "- " + i.replace(/^\s*[•◦▪\-*·]\s*/, "")).join("\n") }))
-  ]
-  const atoms: Atom[] = [...blocks]
+  const blocks: Atom[] = ocr.tables.filter((t) => keep(t.box)).map((t) => ({ box: t.box, text: "", para: -1, md: tableMd(t.rows) }))
+  // list items become ordinary lines (boxes split evenly) so they pair with labels beside them ("Type:" "Bug")
+  const listAtoms: Atom[] = ocr.lists.filter((l) => keep(l.box)).flatMap((l, li) =>
+    l.items.map((item, k) => {
+      const h = l.box[3] / l.items.length
+      const bullet = /^\s*[•◦▪\-*·]/.test(item)
+      const text = item.replace(/^\s*[•◦▪\-*·]\s*/, "")
+      return { box: [l.box[0], l.box[1] + k * h, l.box[2], h] as Box, text: bullet ? `- ${text}` : text, para: -100 - li }
+    })
+  )
+  const listBoxes = ocr.lists.map((l) => l.box)
+  const atoms: Atom[] = [...blocks, ...listAtoms]
   ocr.paragraphs.forEach((p, pi) => {
     for (const l of p.lines.length ? p.lines : [{ text: p.text, box: p.box }]) {
-      if (!keep(l.box) || blocks.some((b) => inside(l.box, b.box))) continue
-      atoms.push({ box: l.box, text: l.text, para: pi })
+      if (!keep(l.box) || blocks.some((b) => inside(l.box, b.box)) || listBoxes.some((b) => inside(l.box, b))) continue
+      const text = clean(l.text)
+      if (text) atoms.push({ box: l.box, text, para: pi })
     }
   })
+  if (!atoms.length) return ""
   const lineH = median(atoms.filter((a) => !a.md).map((a) => a.box[3])) || 20
-  return strips(atoms, ocr.width)
-    .map((s) => stripMarkdown(rows(s), lineH).join("\n\n"))
-    .join("\n\n---\n\n")
-    .trim()
+  const out: string[] = []
+  panelSeq = 0
+  const regs = regions(atoms, ocr.width, lineH)
+  for (let i = 0; i < regs.length; ) {
+    // consecutive pieces of one panel are rendered together under one name
+    let j = i + 1
+    while (j < regs.length && regs[i].panel >= 0 && regs[j].panel === regs[i].panel) j++
+    const group = regs.slice(i, j)
+    i = j
+    const all = group.flatMap((g) => g.atoms)
+    const box = bbox(all)
+    const label = group[0].label
+    if (label && box[3] > ocr.height * 0.12) out.push(`#### ${label}`)
+    // a narrow side panel of short items (file tree, nav) reads best as an indented list
+    const tree = label && label !== "Main" && box[2] < ocr.width * 0.3 ? treeList(rows(all), lineH) : null
+    if (tree) {
+      out.push(tree)
+      continue
+    }
+    for (const g of group) {
+      if (g.atoms.length >= 3 && g.atoms.every((a) => /^\d{1,5}$/.test(a.text))) continue // editor line numbers
+      const rs = rows(g.atoms)
+      if (!rs.length) continue
+      const code = codeRegion(rs)
+      out.push(...(code ? [code] : regionMarkdown(rs, lineH)))
+    }
+  }
+  return out.join("\n\n").trim()
 }
 
 // ---------- diagrams ----------
