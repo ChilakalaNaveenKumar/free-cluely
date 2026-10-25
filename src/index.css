@@ -1,167 +1,251 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* Liquid Glass Effect Base */
-.liquid-glass {
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(16px) saturate(180%) brightness(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%) brightness(120%);
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 1rem;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
-  position: relative;
-  overflow: hidden;
+:root {
+  --tint: 0.55; /* set from the opacity setting */
+  --bg: rgba(16, 17, 22, var(--tint));
+  --fg: #e9e9ee;
+  --muted: #9a9aa6;
+  --line: rgba(255, 255, 255, 0.09);
+  --accent: #5aa9ff;
+  --warn: #f5b84a;
+  --bad: #ff6b6b;
+  --code: rgba(0, 0, 0, 0.35);
 }
 
-/* Enhanced liquid glass with shimmer effect */
-.liquid-glass::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
+html,
+body,
+#root {
+  margin: 0;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.1),
-    transparent
-  );
-  animation: shimmer 3s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes shimmer {
-  0% {
-    left: -100%;
-  }
-  50% {
-    left: 100%;
-  }
-  100% {
-    left: 100%;
-  }
-}
-
-/* Fallback for browsers without backdrop-filter support */
-@supports not (backdrop-filter: blur()) {
-  .liquid-glass {
-    background: rgba(255, 255, 255, 0.5);
-    border: 2px solid rgba(255, 255, 255, 0.6);
-  }
-}
-
-/* Add a subtle outline to ensure visibility */
-.liquid-glass:before {
-  outline: 1px solid rgba(255, 255, 255, 0.1);
-  outline-offset: -1px;
-}
-
-.draggable-area {
-  -webkit-app-region: drag;
-  height: 32px;
-  width: 100%;
   background: transparent;
-  cursor: move;
-  position: relative;
-  z-index: 1000;
-  border-radius: 1rem 1rem 0 0;
-}
-
-/* Make sure buttons and interactive elements are not draggable */
-button, input, select, textarea, .interactive {
-  -webkit-app-region: no-drag;
-}
-
-/* Override for the liquid glass bar - make it draggable */
-.liquid-glass.draggable-area {
-  -webkit-app-region: drag;
-  cursor: move;
-}
-
-/* But keep buttons inside clickable */
-.liquid-glass.draggable-area button {
-  -webkit-app-region: no-drag;
-  cursor: pointer;
-}
-
-/* Add visual feedback for draggable area */
-.draggable-area:hover {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
-
-/* Dark theme liquid glass variant */
-.liquid-glass-dark {
-  background: rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(16px) saturate(180%) brightness(80%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%) brightness(80%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-}
-
-/* Ensure content is not blurred */
-.glass-content {
-  position: relative;
-  z-index: 1;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-/* Chat container specific styling */
-.liquid-glass.chat-container {
-  min-height: auto;
-  height: auto;
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(20px) saturate(200%) brightness(110%);
-  -webkit-backdrop-filter: blur(20px) saturate(200%) brightness(110%);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: 
-    0 12px 40px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.05);
-}
-
-/* Thin bar variant of liquid glass - for command bar */
-.liquid-glass-bar {
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(16px) saturate(180%) brightness(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%) brightness(120%);
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 1rem;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
-  position: relative;
   overflow: hidden;
-  height: 32px !important;
-  min-height: 32px !important;
-  max-height: 32px !important;
 }
 
-/* Shimmer effect for bar variant */
-.liquid-glass-bar::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
+body {
+  font: 13.5px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  color: var(--fg);
+}
+
+.panel {
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.1),
-    transparent
-  );
-  animation: shimmer 3s ease-in-out infinite;
-  pointer-events: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.panel.interactive {
+  border-color: var(--accent);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+  min-width: 0;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: #4ade80;
+}
+.dot.reading,
+.dot.routing,
+.dot.thinking,
+.dot.answering {
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+.dot.error {
+  background: var(--bad);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.pill {
+  flex: none;
+  font-size: 11.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+.pill.accent {
+  color: var(--accent);
+}
+.pill.warn {
+  color: var(--warn);
+}
+
+.notice,
+.status,
+.error {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.notice {
+  color: var(--accent);
+}
+.status {
+  color: var(--muted);
+}
+.error {
+  color: var(--bad);
+  white-space: pre-wrap;
+}
+
+.body {
+  flex: 1;
+  min-height: 0; /* lets the flex child shrink so it scrolls instead of overflowing the window */
+  overflow-y: auto;
+  padding: 4px 14px 14px;
+  overflow-wrap: anywhere;
+}
+
+.body h1,
+.body h2,
+.body h3 {
+  font-size: 14px;
+  margin: 14px 0 4px;
+}
+.body p {
+  margin: 6px 0;
+}
+.body strong {
+  color: #fff;
+}
+.body ul,
+.body ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+.body code {
+  font: 12px/1.45 ui-monospace, Menlo, monospace;
+  background: var(--code);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.body pre {
+  background: var(--code);
+  padding: 8px 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.body pre code {
+  background: none;
+  padding: 0;
+}
+.codeblock {
+  position: relative;
+  background: var(--code);
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.codeblock .lang {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.mermaid {
+  margin: 8px 0;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.body blockquote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+.body table {
+  border-collapse: collapse;
+  margin: 6px 0;
+}
+.body th,
+.body td {
+  border: 1px solid var(--line);
+  padding: 3px 7px;
+}
+
+.body::-webkit-scrollbar {
+  width: 6px;
+}
+.body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+
+.payload {
+  white-space: pre-wrap;
+  font: 12px/1.45 ui-monospace, Menlo, monospace;
+}
+
+.label {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin: 8px 0 4px;
+}
+
+.help .hk {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+kbd {
+  display: inline-block;
+  min-width: 26px;
+  text-align: center;
+  font: 11px ui-monospace, Menlo, monospace;
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-right: 4px;
+}
+
+.ask {
+  border-top: 1px solid var(--line);
+  padding: 8px;
+}
+.ask input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--fg);
+  padding: 7px 10px;
+  font: inherit;
+  outline: none;
+}
+.ask input:focus {
+  border-color: var(--accent);
 }

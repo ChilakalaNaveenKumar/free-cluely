@@ -1,184 +1,170 @@
-import { ToastProvider } from "./components/ui/toast"
-import Queue from "./_pages/Queue"
-import { ToastViewport } from "@radix-ui/react-toast"
 import { useEffect, useRef, useState } from "react"
-import Solutions from "./_pages/Solutions"
-import { QueryClient, QueryClientProvider } from "react-query"
+import Markdown from "./Markdown"
+
+type Iteration = { at: number; kind: string; answer: string; diagrams: number }
+type State = {
+  status: "idle" | "reading" | "routing" | "thinking" | "answering" | "error"
+  error: string | null
+  group: { count: number; closesAt: number | null; paused: boolean }
+  notice: string | null
+  thread: { id: string; title: string; iterations: Iteration[] } | null
+  viewIndex: number
+  live: string
+  asking: boolean
+  interactive: boolean
+  area: { width: number; height: number } | null
+  payload: string | null
+  showPayload: boolean
+  opacity: number
+}
 
 declare global {
   interface Window {
-    electronAPI: {
-      //RANDOM GETTER/SETTERS
-      updateContentDimensions: (dimensions: {
-        width: number
-        height: number
-      }) => Promise<void>
-      getScreenshots: () => Promise<Array<{ path: string; preview: string }>>
-
-      //GLOBAL EVENTS
-      //TODO: CHECK THAT PROCESSING NO SCREENSHOTS AND TAKE SCREENSHOTS ARE BOTH CONDITIONAL
-      onUnauthorized: (callback: () => void) => () => void
-      onScreenshotTaken: (
-        callback: (data: { path: string; preview: string }) => void
-      ) => () => void
-      onProcessingNoScreenshots: (callback: () => void) => () => void
-      onResetView: (callback: () => void) => () => void
-      takeScreenshot: () => Promise<void>
-
-      //INITIAL SOLUTION EVENTS
-      deleteScreenshot: (
-        path: string
-      ) => Promise<{ success: boolean; error?: string }>
-      onSolutionStart: (callback: () => void) => () => void
-      onSolutionError: (callback: (error: string) => void) => () => void
-      onSolutionSuccess: (callback: (data: any) => void) => () => void
-      onProblemExtracted: (callback: (data: any) => void) => () => void
-
-      onDebugSuccess: (callback: (data: any) => void) => () => void
-
-      onDebugStart: (callback: () => void) => () => void
-      onDebugError: (callback: (error: string) => void) => () => void
-
-      // Audio Processing
-      analyzeAudioFromBase64: (data: string, mimeType: string) => Promise<{ text: string; timestamp: number }>
-      analyzeAudioFile: (path: string) => Promise<{ text: string; timestamp: number }>
-
-      moveWindowLeft: () => Promise<void>
-      moveWindowRight: () => Promise<void>
-      moveWindowUp: () => Promise<void>
-      moveWindowDown: () => Promise<void>
-      quitApp: () => Promise<void>
-      
-      // LLM Model Management
-      getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini"; model: string; isOllama: boolean }>
-      getAvailableOllamaModels: () => Promise<string[]>
-      switchToOllama: (model?: string, url?: string) => Promise<{ success: boolean; error?: string }>
-      switchToGemini: (apiKey?: string) => Promise<{ success: boolean; error?: string }>
-      testLlmConnection: () => Promise<{ success: boolean; error?: string }>
-      
-      invoke: (channel: string, ...args: any[]) => Promise<any>
+    copilot: {
+      onState: (cb: (s: State) => void) => () => void
+      onScroll: (cb: (dy: number) => void) => () => void
+      ask: (q: string) => Promise<void>
+      closeAsk: () => Promise<void>
+      ready: () => Promise<void>
+      hover: (on: boolean) => void
     }
   }
 }
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: Infinity,
-      cacheTime: Infinity
-    }
-  }
-})
+const STATUS: Record<State["status"], string> = {
+  idle: "",
+  reading: "Reading screenshots…",
+  routing: "Matching to a thread…",
+  thinking: "Thinking…",
+  answering: "Answering…",
+  error: "Error"
+}
 
-const App: React.FC = () => {
-  const [view, setView] = useState<"queue" | "solutions" | "debug">("queue")
-  const containerRef = useRef<HTMLDivElement>(null)
+const HOTKEYS: [string, string][] = [
+  ["S", "screenshot"],
+  ["A", "choose area"],
+  ["↩", "send now"],
+  ["N", "new thread"],
+  ["J", "join previous"],
+  ["K", "ask"],
+  ["←/→", "history"],
+  ["↑/↓", "scroll"],
+  ["I", "interactive"],
+  ["P", "pause"],
+  ["D", "sent text"],
+  ["H", "hide"]
+]
 
-  // Effect for height monitoring
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(Date.now())
   useEffect(() => {
-    const cleanup = window.electronAPI.onResetView(() => {
-      console.log("Received 'reset-view' message from main process.")
-      queryClient.invalidateQueries(["screenshots"])
-      queryClient.invalidateQueries(["problem_statement"])
-      queryClient.invalidateQueries(["solution"])
-      queryClient.invalidateQueries(["new_solution"])
-      setView("queue")
-    })
+    if (!active) return
+    const t = setInterval(() => setNow(Date.now()), 500)
+    return () => clearInterval(t)
+  }, [active])
+  return now
+}
 
+export default function App() {
+  const [s, setS] = useState<State | null>(null)
+  const [q, setQ] = useState("")
+  const body = useRef<HTMLDivElement>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const now = useNow(!!s?.group.closesAt)
+
+  useEffect(() => {
+    const off1 = window.copilot.onState(setS)
+    const off2 = window.copilot.onScroll((dy) => body.current?.scrollBy({ top: dy, behavior: "smooth" }))
+    window.copilot.ready()
     return () => {
-      cleanup()
+      off1()
+      off2()
     }
   }, [])
 
   useEffect(() => {
-    if (!containerRef.current) return
+    if (s?.asking) input.current?.focus()
+  }, [s?.asking])
 
-    const updateHeight = () => {
-      if (!containerRef.current) return
-      const height = containerRef.current.scrollHeight
-      const width = containerRef.current.scrollWidth
-      window.electronAPI?.updateContentDimensions({ width, height })
-    }
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateHeight()
-    })
-
-    // Initial height update
-    updateHeight()
-
-    // Observe for changes
-    resizeObserver.observe(containerRef.current)
-
-    // Also update height when view changes
-    const mutationObserver = new MutationObserver(() => {
-      updateHeight()
-    })
-
-    mutationObserver.observe(containerRef.current, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      characterData: true
-    })
-
-    return () => {
-      resizeObserver.disconnect()
-      mutationObserver.disconnect()
-    }
-  }, [view]) // Re-run when view changes
-
-  useEffect(() => {
-    const cleanupFunctions = [
-      window.electronAPI.onSolutionStart(() => {
-        setView("solutions")
-        console.log("starting processing")
-      }),
-
-      window.electronAPI.onUnauthorized(() => {
-        queryClient.removeQueries(["screenshots"])
-        queryClient.removeQueries(["solution"])
-        queryClient.removeQueries(["problem_statement"])
-        setView("queue")
-        console.log("Unauthorized")
-      }),
-      // Update this reset handler
-      window.electronAPI.onResetView(() => {
-        console.log("Received 'reset-view' message from main process")
-
-        queryClient.removeQueries(["screenshots"])
-        queryClient.removeQueries(["solution"])
-        queryClient.removeQueries(["problem_statement"])
-        setView("queue")
-        console.log("View reset to 'queue' via Command+R shortcut")
-      }),
-      window.electronAPI.onProblemExtracted((data: any) => {
-        if (view === "queue") {
-          console.log("Problem extracted successfully")
-          queryClient.invalidateQueries(["problem_statement"])
-          queryClient.setQueryData(["problem_statement"], data)
-        }
-      })
-    ]
-    return () => cleanupFunctions.forEach((cleanup) => cleanup())
-  }, [])
+  if (!s) return null
+  const its = s.thread?.iterations ?? []
+  const idx = s.viewIndex < 0 ? its.length - 1 : s.viewIndex
+  const showing = s.live || its[idx]?.answer || ""
+  const secs = s.group.closesAt ? Math.max(0, Math.ceil((s.group.closesAt - now) / 1000)) : 0
 
   return (
-    <div ref={containerRef} className="min-h-0">
-      <QueryClientProvider client={queryClient}>
-        <ToastProvider>
-          {view === "queue" ? (
-            <Queue setView={setView} />
-          ) : view === "solutions" ? (
-            <Solutions setView={setView} />
-          ) : (
-            <></>
-          )}
-          <ToastViewport />
-        </ToastProvider>
-      </QueryClientProvider>
+    <div
+      className={`panel ${s.interactive ? "interactive" : ""}`}
+      style={{ ["--tint" as string]: s.opacity }}
+      onMouseEnter={() => window.copilot.hover(true)}
+      onMouseLeave={() => window.copilot.hover(false)}
+    >
+      <header>
+        <span className={`dot ${s.status}`} />
+        <span className="title">{s.thread?.title ?? "No thread yet"}</span>
+        {its.length > 0 && (
+          <span className="pill">
+            {s.live ? its.length + 1 : idx + 1}/{s.live ? its.length + 1 : its.length}
+          </span>
+        )}
+        {s.group.count > 0 && (
+          <span className="pill accent">
+            📸 {s.group.count} · {secs}s
+          </span>
+        )}
+        {s.group.paused && <span className="pill warn">paused</span>}
+      </header>
+
+      {s.notice && <div className="notice">{s.notice}</div>}
+      {s.status !== "idle" && s.status !== "error" && <div className="status">{STATUS[s.status]}</div>}
+      {s.error && <div className="error">{s.error}</div>}
+
+      <div className="body" ref={body}>
+        {s.showPayload ? (
+          <>
+            <div className="label">Last text sent to the model</div>
+            <pre className="payload">{s.payload ?? "Nothing sent yet."}</pre>
+          </>
+        ) : showing ? (
+          <Markdown text={showing} />
+        ) : (
+          <div className="help">
+            <div className="label">⌃⌥⌘ +</div>
+            {HOTKEYS.map(([k, v]) => (
+              <div key={k} className="hk">
+                <kbd>{k}</kbd> {v}
+              </div>
+            ))}
+            <div className="label" style={{ marginTop: 10 }}>
+              Area: {s.area ? `${s.area.width}×${s.area.height}` : "whole screen under cursor"}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {s.asking && (
+        <form
+          className="ask"
+          onSubmit={(e) => {
+            e.preventDefault()
+            window.copilot.ask(q)
+            setQ("")
+          }}
+        >
+          <input
+            ref={input}
+            value={q}
+            placeholder="Ask about this thread…  (Esc to close)"
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setQ("")
+                window.copilot.closeAsk()
+              }
+            }}
+          />
+        </form>
+      )}
     </div>
   )
 }
-
-export default App
