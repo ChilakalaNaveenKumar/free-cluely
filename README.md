@@ -13,7 +13,7 @@ bin/sc restart    # after pulling changes: bin/sc build && bin/sc restart
 bin/sc login on   # also start it when you log in (off by default)
 ```
 
-The service runs `~/.screen-copilot/Screen Copilot Overlay.app`, a renamed and signed copy of Electron that loads this repo, so it has its own Screen Recording entry that survives code updates (`bin/sc build && bin/sc restart`). Only one copy runs at a time. The panel's ✕ hides it; hidden stays hidden (the menu bar shows **SC ●** when an answer arrives) until ⌃⌥⌘H or the SC menu. Drag the panel by its header.
+The service runs `~/.screen-copilot/Screen Copilot.app`, signed once and never rebuilt; a fixed starter inside it loads this repo, so the Screen Recording grant survives code updates (`bin/sc build && bin/sc restart`). Only one copy runs at a time. The panel's ✕ hides it; hidden stays hidden (the menu bar shows **SC ●** when an answer arrives) until ⌃⌥⌘H or the SC menu. Drag the panel by its header.
 
 Run `bin/sc start` from your normal terminal: it passes your `GOOGLE_APPLICATION_CREDENTIALS` (service account) to the service, so Vertex keeps working without re-signing in.
 

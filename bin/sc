@@ -9,11 +9,10 @@ HOME_DIR="$HOME/.screen-copilot"
 PLIST="$HOME_DIR/$LABEL.plist"
 LOGIN_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME_DIR/app.log"
-# A renamed, signed copy of Electron that runs the repo's code. It has its own Screen Recording
-# entry ("Screen Copilot Overlay") and is never rebuilt, so the permission survives code updates
-# (an ad-hoc signature changes with every rebuild, and macOS ties the permission to it).
-BUNDLE="$HOME_DIR/Screen Copilot Overlay.app"
-BIN="$BUNDLE/Contents/MacOS/Electron"
+# "Screen Copilot.app" is signed once and never rebuilt: inside it a fixed starter loads this
+# repo's code, so code updates don't change its signature and the Screen Recording grant lasts.
+BUNDLE="$HOME_DIR/Screen Copilot.app"
+BIN="$BUNDLE/Contents/MacOS/Screen Copilot"
 DOMAIN="gui/$(id -u)"
 
 write_plist() {
@@ -35,7 +34,7 @@ write_plist() {
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>$BIN</string><string>$APP_DIR</string></array>
+  <array><string>$BIN</string></array>
   <key>WorkingDirectory</key><string>$APP_DIR</string>
   <key>EnvironmentVariables</key>
   <dict>
@@ -63,13 +62,20 @@ build() {
 }
 
 make_bundle() {
+  local src="$APP_DIR/release/mac-arm64/Screen Copilot.app"
+  # electron-builder gives the app and its helpers the right names ("Screen Copilot Helper", …)
+  [ -d "$src" ] || (cd "$APP_DIR" && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac dir >/dev/null)
   mkdir -p "$HOME_DIR"
-  cp -R "$APP_DIR/node_modules/electron/dist/Electron.app" "$BUNDLE"
-  local plist="$BUNDLE/Contents/Info.plist"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.screencopilot.overlay" "$plist"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleName Screen Copilot Overlay" "$plist"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Screen Copilot Overlay" "$plist" 2>/dev/null ||
-    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Screen Copilot Overlay" "$plist"
+  rm -rf "$BUNDLE"
+  cp -R "$src" "$BUNDLE"
+  local res="$BUNDLE/Contents/Resources"
+  rm -rf "$res/app.asar" "$res/app.asar.unpacked" "$res/native"
+  mkdir -p "$res/app"
+  printf '{ "name": "screen-copilot", "productName": "Screen Copilot", "main": "main.js" }\n' >"$res/app/package.json"
+  cat >"$res/app/main.js" <<JS
+// Fixed starter: runs the code in the repo, so this signed app never has to change.
+require("$APP_DIR/dist-electron/main.js")
+JS
   codesign --force --deep -s - "$BUNDLE" >/dev/null 2>&1
 }
 
