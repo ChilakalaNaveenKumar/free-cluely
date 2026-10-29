@@ -12,6 +12,7 @@ import { WindowHelper } from "./WindowHelper"
 type Status = "idle" | "reading" | "routing" | "thinking" | "answering" | "error"
 
 const overlay = new WindowHelper()
+let revealOnFirst = false // set at start from config.startHidden
 const assistant = new Assistant()
 const pending = new Map<string, Promise<Extracted>>()
 let queue: Promise<void> = Promise.resolve()
@@ -113,6 +114,11 @@ function enqueue(job: () => Promise<void>): void {
 const inbox = new Inbox({
   onFile: (file) => {
     log(`screenshot added: ${path.basename(file)}`)
+    // started hidden: the first screenshot brings the panel up; after that a manual hide is kept
+    if (revealOnFirst) {
+      revealOnFirst = false
+      overlay.show()
+    }
     pending.set(file, extract(file))
   },
   onGroup: (files) =>
@@ -295,7 +301,8 @@ app.whenReady().then(() => {
     }
     push()
   })
-  log(`starting (${process.env.NODE_ENV ?? "production"})`)
+  revealOnFirst = getConfig().startHidden
+  log(`starting (${process.env.NODE_ENV ?? "production"})${revealOnFirst ? ", panel hidden until the first screenshot" : ""}`)
   overlay.create().webContents.on("did-finish-load", () => log("panel loaded"))
   createTray()
   registerShortcuts()

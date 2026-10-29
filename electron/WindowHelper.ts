@@ -44,7 +44,8 @@ export class WindowHelper {
     w.setHiddenInMissionControl(true)
     w.setIgnoreMouseEvents(true, { forward: true })
     w.loadURL(startUrl).catch((err) => console.error("Failed to load overlay:", err))
-    w.once("ready-to-show", () => w.showInactive())
+    this.visible = !getConfig().startHidden
+    w.once("ready-to-show", () => this.visible && w.showInactive())
 
     let saveTimer: NodeJS.Timeout | null = null
     const remember = () => {

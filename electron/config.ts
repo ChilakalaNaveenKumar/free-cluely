@@ -17,6 +17,7 @@ export type Config = {
   extractDiagrams: boolean
   opacity: number
   blur: boolean // frosted background; off = plain see-through tint
+  startHidden: boolean // panel stays hidden after start until the first screenshot arrives
   windowBounds?: { x: number; y: number; width: number; height: number }
   gcpProject: string
   gcpRegion: string
@@ -35,6 +36,7 @@ const DEFAULTS: Config = {
   extractDiagrams: true,
   opacity: 0.45,
   blur: false,
+  startHidden: true,
   gcpProject: process.env.GOOGLE_CLOUD_PROJECT || "",
   gcpRegion: "global",
   answerModel: "claude-opus-5-5",
