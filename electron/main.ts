@@ -12,7 +12,6 @@ import { WindowHelper } from "./WindowHelper"
 type Status = "idle" | "reading" | "routing" | "thinking" | "answering" | "error"
 
 const overlay = new WindowHelper()
-let revealOnFirst = false // set at start from config.startHidden
 const assistant = new Assistant()
 const pending = new Map<string, Promise<Extracted>>()
 let queue: Promise<void> = Promise.resolve()
@@ -114,10 +113,10 @@ function enqueue(job: () => Promise<void>): void {
 const inbox = new Inbox({
   onFile: (file) => {
     log(`screenshot added: ${path.basename(file)}`)
-    // started hidden: the first screenshot brings the panel up; after that a manual hide is kept
-    if (revealOnFirst) {
-      revealOnFirst = false
+    // a new screenshot means you want the panel: bring it back if it was closed or started hidden
+    if (!overlay.visible) {
       overlay.show()
+      tray?.setTitle("SC")
     }
     pending.set(file, extract(file))
   },
@@ -274,10 +273,16 @@ ipcMain.handle("open-thread", (_e, id: string) => {
 })
 
 if (process.env.SC_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.SC_DEBUG_PORT)
-// Opened outside the service (Finder, Spotlight, macOS "Quit & Reopen" after a permission grant):
-// that copy lacks the service's environment (Vertex login, log file), so start the service and exit.
+// One copy only. A second launch (opening the app, bin/sc show, macOS "Quit & Reopen") just tells
+// the running copy to show its panel and exits.
+const primary = app.requestSingleInstanceLock()
+if (!primary) app.exit(0)
+
+// Opened outside the service while it isn't running: that copy lacks the service's environment
+// (Vertex login, log file), so start the service, which shows the panel, and exit.
 const SERVICE_PLIST = path.join(HOME_DIR, "com.screencopilot.app.plist")
-if (!process.env.SC_SERVICE && app.isPackaged && fs.existsSync(SERVICE_PLIST)) {
+if (primary && !process.env.SC_SERVICE && app.isPackaged && fs.existsSync(SERVICE_PLIST)) {
+  app.releaseSingleInstanceLock()
   const domain = `gui/${process.getuid?.()}`
   spawn("/bin/sh", ["-c", `sleep 1; /bin/launchctl kickstart ${domain}/com.screencopilot.app || /bin/launchctl bootstrap ${domain} "${SERVICE_PLIST}"`], {
     detached: true,
@@ -286,10 +291,12 @@ if (!process.env.SC_SERVICE && app.isPackaged && fs.existsSync(SERVICE_PLIST)) {
   app.exit(0)
 }
 
-// One copy only: macOS "Quit & Reopen" after granting a permission, or a second start, would
-// otherwise stack a second panel on top of the first.
-if (!app.requestSingleInstanceLock()) app.exit(0)
-app.on("second-instance", () => overlay.show())
+const showPanel = () => {
+  overlay.show()
+  tray?.setTitle("SC")
+}
+app.on("second-instance", showPanel)
+app.on("activate", showPanel) // macOS sends this instead when the app is opened while running
 app.dock?.hide()
 app.whenReady().then(() => {
   loadConfig()
@@ -301,8 +308,7 @@ app.whenReady().then(() => {
     }
     push()
   })
-  revealOnFirst = getConfig().startHidden
-  log(`starting (${process.env.NODE_ENV ?? "production"})${revealOnFirst ? ", panel hidden until the first screenshot" : ""}`)
+  log(`starting (${process.env.NODE_ENV ?? "production"})${getConfig().startHidden ? ", panel hidden until the first screenshot" : ""}`)
   overlay.create().webContents.on("did-finish-load", () => log("panel loaded"))
   createTray()
   registerShortcuts()

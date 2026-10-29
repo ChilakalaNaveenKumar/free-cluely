@@ -1,6 +1,6 @@
 #!/bin/bash
 # Screen Copilot as a background service (launchd), independent of any terminal.
-#   sc start | stop | restart | status | logs | build | login on|off
+#   sc start | stop | restart | show | status | logs | build | login on|off
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -104,6 +104,11 @@ case "${1:-status}" in
     else echo "not running"; fi
     ;;
   restart) "$0" stop; sleep 1; "$0" start ;;
+  show)
+    running || "$0" start
+    open -n -a "$BUNDLE" # a second launch only tells the running copy to show its panel
+    echo "panel shown"
+    ;;
   status)
     if running; then
       pid=$(launchctl print "$DOMAIN/$LABEL" | awk '/pid =/ {print $3; exit}')
@@ -119,5 +124,5 @@ case "${1:-status}" in
       *) echo "usage: sc login on|off"; exit 1 ;;
     esac
     ;;
-  *) echo "usage: sc start|stop|restart|status|logs|build|login on|off"; exit 1 ;;
+  *) echo "usage: sc start|stop|restart|show|status|logs|build|login on|off"; exit 1 ;;
 esac
