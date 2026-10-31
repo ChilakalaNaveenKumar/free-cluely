@@ -29,7 +29,7 @@ export type Config = {
 const DEFAULTS: Config = {
   inboxDir: path.join(os.homedir(), "ScreenCopilot", "inbox"),
   area: null,
-  quietSeconds: 20,
+  quietSeconds: 10,
   maxGroupSeconds: 0,
   redact: [],
   redactRegex: [],
