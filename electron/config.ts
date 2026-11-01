@@ -48,18 +48,31 @@ const DEFAULTS: Config = {
 
 let current: Config | null = null
 
+// A config file that doesn't parse (a typo while editing) keeps the last good settings and is
+// never overwritten, so redaction rules can't silently switch off or be lost.
+let broken = false
+
 export function loadConfig(): Config {
   fs.mkdirSync(HOME_DIR, { recursive: true })
   let saved: Partial<Config> = {}
-  try {
-    saved = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"))
-  } catch {
-    // first run or unreadable file: fall back to defaults and write them out
+  if (fs.existsSync(CONFIG_PATH)) {
+    try {
+      saved = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"))
+      broken = false
+    } catch (e) {
+      broken = true
+      console.error(`[config] ${CONFIG_PATH} doesn't parse, keeping the last good settings: ${(e as Error).message}`)
+      if (current) return current
+    }
   }
   current = { ...DEFAULTS, ...saved }
   fs.mkdirSync(current.inboxDir, { recursive: true })
   if (!fs.existsSync(CONFIG_PATH)) saveConfig(current)
   return current
+}
+
+export function configBroken(): boolean {
+  return broken
 }
 
 export function getConfig(): Config {
@@ -68,6 +81,7 @@ export function getConfig(): Config {
 
 export function saveConfig(patch: Partial<Config>): Config {
   current = { ...(current ?? DEFAULTS), ...patch }
+  if (broken) return current // don't replace the user's half-edited file
   fs.mkdirSync(HOME_DIR, { recursive: true })
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(current, null, 2))
   return current

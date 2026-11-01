@@ -3,7 +3,7 @@ import { execFile, spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { captureArea, clearArea, pickArea } from "./capture"
-import { getConfig, HOME_DIR, loadConfig, watchConfig } from "./config"
+import { configBroken, getConfig, HOME_DIR, loadConfig, watchConfig } from "./config"
 import { GroupStatus, Inbox } from "./inbox"
 import { Handlers, Session, SessionView } from "./session"
 import { WindowHelper } from "./WindowHelper"
@@ -74,6 +74,7 @@ const handlers: Handlers = {
     state.thinking = ""
     push()
   },
+  onNote: (msg) => notice(msg),
   onDone: (v) => {
     if (!overlay.visible) tray?.setTitle("SC ●") // an answer is waiting in the hidden panel
     log(`answered: ${v.title}, turn ${v.turns.length}`)
@@ -281,6 +282,7 @@ app.whenReady().then(() => {
   loadConfig()
   let inboxDir = getConfig().inboxDir
   watchConfig((c) => {
+    if (configBroken()) notice("config.json has a typo — keeping your last good settings until it's fixed")
     if (c.inboxDir !== inboxDir) {
       inboxDir = c.inboxDir
       inbox.restart()

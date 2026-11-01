@@ -5,6 +5,7 @@ import { HOME_DIR, getConfig } from "./config"
 import { prepareImage } from "./extract"
 
 const SESSIONS_DIR = path.join(HOME_DIR, "sessions")
+const MAX_IMAGES = 20 // screenshots re-sent as images each turn; older ones are summarised by their answers
 const CURRENT = path.join(SESSIONS_DIR, "current")
 
 export type Turn = { at: number; kind: "screens" | "question"; shots: number; question?: string; answer: string; redactions: number }
@@ -37,7 +38,7 @@ async function piai(): Promise<any> {
 
 // Keys live in the repo's .env (gitignored); re-read each call so a new key works without a restart.
 function loadEnv(): void {
-  const file = path.join(__dirname, "..", ".env")
+  const file = process.env.SCREEN_COPILOT_ENV || path.join(__dirname, "..", ".env")
   if (!fs.existsSync(file)) return
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/)
@@ -50,6 +51,7 @@ export type Handlers = {
   onThinking: (summary: string) => void
   onDelta: (text: string) => void
   onDone: (s: SessionView) => void
+  onNote?: (msg: string) => void
 }
 
 export class Session {
@@ -73,7 +75,10 @@ export class Session {
     fs.mkdirSync(path.join(SESSIONS_DIR, id), { recursive: true })
     fs.writeFileSync(CURRENT, id)
     const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    return { id, title: `Session · started ${time}`, startedAt: now.getTime(), turns: [] }
+    const view: SessionView = { id, title: `Session · started ${time}`, startedAt: now.getTime(), turns: [] }
+    // saved straight away so a restart before the first turn reuses this session instead of making another
+    fs.writeFileSync(path.join(SESSIONS_DIR, id, "session.json"), JSON.stringify({ view, messages: [] }))
+    return view
   }
 
   private dir(): string {
@@ -93,30 +98,44 @@ export class Session {
   }
 
   async addScreens(files: string[], h: Handlers): Promise<void> {
-    const content: StoredBlock[] = [{ type: "text", text: `${files.length} new screenshot(s).` }]
+    const images: StoredBlock[] = []
+    const skipped: string[] = []
     let redactions = 0
     for (const f of files) {
-      const { png, redactions: r } = await prepareImage(f)
-      redactions += r
-      const name = `shot-${Date.now()}-${content.length}.png`
-      fs.writeFileSync(path.join(this.dir(), name), png)
-      content.push({ type: "image", file: name })
+      // a corrupt or already-deleted file shouldn't cost the rest of the group
+      try {
+        const { png, redactions: r } = await prepareImage(f)
+        redactions += r
+        const name = `shot-${Date.now()}-${images.length + 1}.png`
+        fs.writeFileSync(path.join(this.dir(), name), png)
+        images.push({ type: "image", file: name })
+      } catch (e) {
+        skipped.push(path.basename(f))
+        console.error(`[session] skipped ${f}: ${(e as Error).message}`)
+      }
     }
-    await this.run(content, { at: Date.now(), kind: "screens", shots: files.length, answer: "", redactions }, h)
+    if (skipped.length) h.onNote?.(`Skipped ${skipped.length} unreadable screenshot(s): ${skipped.join(", ")}`)
+    if (!images.length) throw new Error(`None of the screenshots could be read (${skipped.join(", ")})`)
+    const content: StoredBlock[] = [{ type: "text", text: `${images.length} new screenshot(s).` }, ...images]
+    await this.run(content, { at: Date.now(), kind: "screens", shots: images.length, answer: "", redactions }, h)
   }
 
   async ask(question: string, h: Handlers): Promise<void> {
     await this.run([{ type: "text", text: question }], { at: Date.now(), kind: "question", shots: 0, question, answer: "", redactions: 0 }, h)
   }
 
-  private toWire(m: StoredMessage): unknown {
+  // Only the newest screenshots travel as images; older ones become a placeholder (their answers
+  // stay in the history), so a long session doesn't grow past the model's input limit.
+  private toWire(m: StoredMessage, sendImage: (file: string) => boolean): unknown {
     if (m.role !== "user") return m
     return {
       ...m,
       content: (m.content as StoredBlock[]).map((b) =>
-        b.type === "image"
-          ? { type: "image", mimeType: "image/png", data: fs.readFileSync(path.join(this.dir(), b.file)).toString("base64") }
-          : b
+        b.type !== "image"
+          ? b
+          : sendImage(b.file)
+            ? { type: "image", mimeType: "image/png", data: fs.readFileSync(path.join(this.dir(), b.file)).toString("base64") }
+            : { type: "text", text: "[an earlier screenshot, no longer attached]" }
       )
     }
   }
@@ -127,8 +146,13 @@ export class Session {
     const { provider, answerModel } = getConfig()
     const model = getModel(provider, answerModel)
     if (!model) throw new Error(`Unknown model ${provider}/${answerModel} — set provider and answerModel in config.json`)
+    const keyVar = ({ openai: "OPENAI_API_KEY", google: "GEMINI_API_KEY", anthropic: "ANTHROPIC_API_KEY" } as Record<string, string>)[provider]
+    if (keyVar && !process.env[keyVar]) throw new Error(`No API key: add ${keyVar}=… to ${path.join(__dirname, "..", ".env")}`)
     const user: StoredMessage = { role: "user", content, timestamp: Date.now() }
-    const context = { systemPrompt: SYSTEM, messages: [...this.messages, user].map((m) => this.toWire(m)) }
+    const all = [...this.messages, user]
+    const files = all.flatMap((m) => (m.role === "user" ? (m.content as StoredBlock[]) : [])).flatMap((b) => (b.type === "image" ? [b.file] : []))
+    const recent = new Set(files.slice(-MAX_IMAGES))
+    const context = { systemPrompt: SYSTEM, messages: all.map((m) => this.toWire(m, (f) => recent.has(f))) }
 
     h.onStatus("thinking")
     const t0 = Date.now()
@@ -156,7 +180,8 @@ export class Session {
     if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error(reply.errorMessage || `model ${reply.stopReason}`)
     console.log(`[timing] full answer after ${((Date.now() - t0) / 1000).toFixed(1)}s`)
 
-    turn.answer = text || reply.content.map((b: any) => (b.type === "text" ? b.text : "")).join("")
+    turn.answer =
+      text || reply.content.map((b: any) => (b.type === "text" ? b.text : "")).join("") || "_No answer came back for this one. Try again or ask a question._"
     this.messages.push(user, reply)
     this.view.turns.push(turn)
     this.save()
