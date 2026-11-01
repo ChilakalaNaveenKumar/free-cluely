@@ -73,6 +73,17 @@ export class Inbox {
     if (files.length) this.h.onGroup(files)
   }
 
+  // Hand over the waiting screenshots (a typed question goes out with them) and reset the countdown.
+  take(): string[] {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
+    this.closesAt = null
+    const files = this.files
+    this.files = []
+    this.emit()
+    return files
+  }
+
   dropLast(): string | null {
     const f = this.files.pop() ?? null
     if (!this.files.length) {

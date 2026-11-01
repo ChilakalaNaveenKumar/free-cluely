@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react"
 import Markdown from "./Markdown"
 
-type Iteration = { at: number; kind: string; answer: string; diagrams: number }
+type Iteration = { at: number; kind: string; answer: string; diagrams: number; question?: string }
 type State = {
   status: "idle" | "reading" | "thinking" | "answering" | "error"
   error: string | null
   group: { count: number; closesAt: number | null; paused: boolean }
   notice: string | null
   thread: { id: string; title: string; iterations: Iteration[] } | null
+  pending: { question?: string; shots: number } | null
   viewIndex: number
   live: string
   thinking: string
@@ -26,7 +27,7 @@ declare global {
       onState: (cb: (s: State) => void) => () => void
       onScroll: (cb: (dy: number) => void) => () => void
       ask: (q: string) => Promise<void>
-      closeAsk: () => Promise<void>
+      typing: (on: boolean) => void
       ready: () => Promise<void>
       hover: (on: boolean) => void
       action: (key: string) => void
@@ -48,7 +49,7 @@ const HOTKEYS: [string, string][] = [
   ["A", "choose area"],
   ["↩", "send now"],
   ["E", "end session"],
-  ["K", "ask"],
+  ["K", "type in the chat box"],
   ["←/→", "history"],
   ["↑/↓", "scroll"],
   ["I", "interactive"],
@@ -71,7 +72,7 @@ export default function App() {
   const [s, setS] = useState<State | null>(null)
   const [q, setQ] = useState("")
   const body = useRef<HTMLDivElement>(null)
-  const input = useRef<HTMLInputElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
   const dragging = useRef(false)
   const now = useNow(!!s?.group.closesAt || (!!s && s.status !== "idle" && s.status !== "error"))
 
@@ -85,8 +86,9 @@ export default function App() {
     }
   }, [])
 
+  // ⌃⌥⌘K (or a click) gives the panel the keyboard; put the cursor in the chat box
   useEffect(() => {
-    if (s?.asking) input.current?.focus()
+    if (s?.asking) setTimeout(() => input.current?.focus(), 30)
   }, [s?.asking])
 
   useEffect(() => {
@@ -117,6 +119,15 @@ export default function App() {
   const its = s.thread?.iterations ?? []
   const idx = s.viewIndex < 0 ? its.length - 1 : s.viewIndex
   const showing = s.live || its[idx]?.answer || ""
+  // the question shown above the answer: the one being answered now, or the one for the turn in view
+  const asked = s.live || (s.thinking && !s.live) ? s.pending?.question : s.viewIndex >= -1 ? its[idx]?.question : undefined
+  const shots = s.live || s.thinking ? s.pending?.shots : its[idx]?.diagrams
+  const send = () => {
+    if (!q.trim()) return
+    window.copilot.ask(q)
+    setQ("")
+    input.current?.blur()
+  }
   const secs = s.group.closesAt ? Math.max(0, Math.ceil((s.group.closesAt - now) / 1000)) : 0
 
   return (
@@ -158,6 +169,7 @@ export default function App() {
       </header>
       <div className="rail" {...hit} onWheel={(e) => body.current?.scrollBy({ top: e.deltaY })} />
 
+
       {s.notice && <div className="notice">{s.notice}</div>}
       {s.status !== "idle" && s.status !== "error" && (
         <div className="status">
@@ -173,12 +185,18 @@ export default function App() {
             <pre className="payload">{s.payload ?? "Nothing sent yet."}</pre>
           </>
         ) : s.thinking && !s.live ? (
-          <div className="thinking">
-            <div className="label">Thinking…</div>
-            <Markdown text={s.thinking} />
-          </div>
+          <>
+            {(asked || shots) && <Asked question={asked} shots={shots} />}
+            <div className="thinking">
+              <div className="label">Thinking…</div>
+              <Markdown text={s.thinking} />
+            </div>
+          </>
         ) : showing ? (
-          <Markdown text={showing} />
+          <>
+            {(asked || (shots ?? 0) > 0) && <Asked question={asked} shots={shots} />}
+            <Markdown text={showing} />
+          </>
         ) : (
           <div className="help">
             <div className="label">⌃⌥⌘ +</div>
@@ -194,29 +212,42 @@ export default function App() {
         )}
       </div>
 
-      {s.asking && (
-        <form
-          className="ask"
-          onSubmit={(e) => {
-            e.preventDefault()
-            window.copilot.ask(q)
-            setQ("")
+      {/* always there; only gets the keyboard while you're typing in it */}
+      <form
+        className={`chat ${s.asking ? "active" : ""}`}
+        {...hit}
+        onSubmit={(e) => {
+          e.preventDefault()
+          send()
+        }}
+      >
+        <textarea
+          ref={input}
+          rows={1}
+          value={q}
+          placeholder={s.group.count ? `Add a question to the ${s.group.count} waiting screenshot(s)… Enter sends` : "Ask anything… Enter sends"}
+          onMouseDown={() => window.copilot.typing(true)}
+          onBlur={() => window.copilot.typing(false)}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault()
+              send()
+            } else if (e.key === "Escape") {
+              input.current?.blur()
+            }
           }}
-        >
-          <input
-            ref={input}
-            value={q}
-            placeholder="Ask about this thread…  (Esc to close)"
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                setQ("")
-                window.copilot.closeAsk()
-              }
-            }}
-          />
-        </form>
-      )}
+        />
+      </form>
+    </div>
+  )
+}
+
+function Asked({ question, shots }: { question?: string; shots?: number }) {
+  return (
+    <div className="asked">
+      {question && <div className="q">{question}</div>}
+      {!!shots && <div className="shots">📷 {shots} screenshot{shots > 1 ? "s" : ""}</div>}
     </div>
   )
 }

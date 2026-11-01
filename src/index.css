@@ -225,7 +225,27 @@ header {
   border-left: 3px solid var(--line);
   color: var(--muted);
 }
+/* nothing runs off the side: long words, URLs and code lines wrap; tables shrink their columns */
+.body p,
+.body li,
+.body td,
+.body th,
+.body code,
+.body .thinking {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.body pre,
+.body pre code {
+  white-space: pre-wrap;
+  overflow-x: hidden;
+}
+.codeblock {
+  overflow-x: hidden;
+}
 .body table {
+  table-layout: fixed;
+  width: 100%;
   border-collapse: collapse;
   margin: 6px 0;
 }
@@ -278,21 +298,40 @@ kbd {
   margin-right: 4px;
 }
 
-.ask {
+.chat {
   border-top: 1px solid var(--line);
   padding: 8px;
 }
-.ask input {
+.chat textarea {
   width: 100%;
   box-sizing: border-box;
+  resize: none;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--fg);
   padding: 7px 10px;
   font: inherit;
+  text-shadow: none;
   outline: none;
+  max-height: 120px;
 }
-.ask input:focus {
+.chat.active textarea,
+.chat textarea:focus {
   border-color: var(--accent);
+}
+
+.asked {
+  margin: 8px 0 4px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  background: rgba(90, 169, 255, 0.08);
+  border-radius: 0 6px 6px 0;
+}
+.asked .q {
+  white-space: pre-wrap;
+}
+.asked .shots {
+  color: var(--muted);
+  font-size: 12px;
 }

@@ -97,7 +97,7 @@ export class Session {
     return this.view
   }
 
-  async addScreens(files: string[], h: Handlers): Promise<void> {
+  async addScreens(files: string[], h: Handlers, question?: string): Promise<void> {
     const images: StoredBlock[] = []
     const skipped: string[] = []
     let redactions = 0
@@ -116,8 +116,9 @@ export class Session {
     }
     if (skipped.length) h.onNote?.(`Skipped ${skipped.length} unreadable screenshot(s): ${skipped.join(", ")}`)
     if (!images.length) throw new Error(`None of the screenshots could be read (${skipped.join(", ")})`)
-    const content: StoredBlock[] = [{ type: "text", text: `${images.length} new screenshot(s).` }, ...images]
-    await this.run(content, { at: Date.now(), kind: "screens", shots: images.length, answer: "", redactions }, h)
+    const intro = question ? `${question}\n\n(${images.length} screenshot(s) attached)` : `${images.length} new screenshot(s).`
+    const content: StoredBlock[] = [{ type: "text", text: intro }, ...images]
+    await this.run(content, { at: Date.now(), kind: "screens", shots: images.length, question, answer: "", redactions }, h)
   }
 
   async ask(question: string, h: Handlers): Promise<void> {

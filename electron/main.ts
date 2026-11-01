@@ -19,7 +19,8 @@ const state = {
   error: null as string | null,
   group: { count: 0, closesAt: null, paused: false } as GroupStatus,
   notice: null as string | null,
-  thread: null as null | { id: string; title: string; iterations: { at: number; kind: string; answer: string; diagrams: number }[] },
+  thread: null as null | { id: string; title: string; iterations: { at: number; kind: string; answer: string; diagrams: number; question?: string }[] },
+  pending: null as null | { question?: string; shots: number }, // what's being answered right now
   viewIndex: -1, // -1 follows the latest answer
   live: "",
   statusSince: 0, // when the current step started, for the elapsed-time display
@@ -55,7 +56,7 @@ function showSession(v: SessionView): void {
   state.thread = {
     id: v.id,
     title: v.title,
-    iterations: v.turns.map((t) => ({ at: t.at, kind: t.kind, answer: t.answer, diagrams: t.shots }))
+    iterations: v.turns.map((t) => ({ at: t.at, kind: t.kind, answer: t.answer, diagrams: t.shots, question: t.question }))
   }
 }
 
@@ -82,6 +83,7 @@ const handlers: Handlers = {
     state.viewIndex = -1
     state.live = ""
     state.thinking = ""
+    state.pending = null
     state.status = "idle"
     push()
   }
@@ -97,6 +99,7 @@ function fail(err: unknown): void {
   state.error = err instanceof Error ? err.message : String(err)
   state.live = ""
   state.thinking = ""
+  state.pending = null
   push()
 }
 
@@ -122,6 +125,7 @@ const inbox = new Inbox({
       state.statusSince = Date.now()
       state.error = null
       state.payload = `${files.length} screenshot(s) sent as images:\n` + files.map((f) => `- ${path.basename(f)}`).join("\n")
+      state.pending = { shots: files.length }
       push()
       await session.addScreens(files, handlers)
     }),
@@ -241,16 +245,25 @@ ipcMain.on("drag", (_e, phase: "start" | "move" | "end", x: number, y: number) =
   phase === "start" ? overlay.dragStart(x, y) : phase === "move" ? overlay.dragMove(x, y) : overlay.dragEnd()
 )
 ipcMain.on("action", (_e, key: string) => keys[key]?.())
+// A typed question goes out with any screenshots still waiting in the countdown, as one message.
 ipcMain.handle("ask", (_e, q: string) => {
-  state.asking = false
-  overlay.focusForTyping(false)
-  push()
-  if (q.trim()) enqueue(() => session.ask(q.trim(), handlers))
+  const question = q.trim()
+  if (!question) return
+  const files = inbox.take()
+  log(`question typed${files.length ? ` with ${files.length} screenshot(s)` : ""}`)
+  enqueue(async () => {
+    state.error = null
+    state.pending = { question, shots: files.length }
+    state.payload = question + (files.length ? `\n\n+ ${files.length} screenshot(s):\n` + files.map((f) => `- ${path.basename(f)}`).join("\n") : "")
+    push()
+    if (files.length) await session.addScreens(files, handlers, question)
+    else await session.ask(question, handlers)
+  })
 })
-ipcMain.handle("close-ask", () => {
-  state.asking = false
-  overlay.focusForTyping(false)
-  push()
+// Clicking the chat box gives the panel the keyboard; Esc or clicking away hands it back.
+ipcMain.on("typing", (_e, on: boolean) => {
+  state.asking = on
+  overlay.focusForTyping(on)
 })
 if (process.env.SC_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.SC_DEBUG_PORT)
 // One copy only. A second launch (opening the app, bin/sc show, macOS "Quit & Reopen") just tells

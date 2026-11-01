@@ -32,8 +32,9 @@ function Code({ lang, code }: { lang: string; code: string }) {
       <SyntaxHighlighter
         language={lang || "text"}
         style={oneDark}
-        customStyle={{ margin: 0, background: "transparent", padding: "8px 10px", fontSize: 12 }}
-        codeTagProps={{ style: { fontFamily: "ui-monospace, Menlo, monospace" } }}
+        wrapLongLines // a long line wraps inside the panel instead of running off the side
+        customStyle={{ margin: 0, background: "transparent", padding: "8px 10px", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+        codeTagProps={{ style: { fontFamily: "ui-monospace, Menlo, monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" } }}
       >
         {code}
       </SyntaxHighlighter>

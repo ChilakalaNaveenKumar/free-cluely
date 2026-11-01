@@ -12,10 +12,9 @@ contextBridge.exposeInMainWorld("copilot", {
     return () => ipcRenderer.removeListener("scroll", fn)
   },
   ask: (q: string) => ipcRenderer.invoke("ask", q),
-  closeAsk: () => ipcRenderer.invoke("close-ask"),
-  openThread: (id: string) => ipcRenderer.invoke("open-thread", id),
   ready: () => ipcRenderer.invoke("ready"),
   hover: (on: boolean) => ipcRenderer.send("hover", on),
   action: (key: string) => ipcRenderer.send("action", key),
-  drag: (phase: "start" | "move" | "end", x = 0, y = 0) => ipcRenderer.send("drag", phase, x, y)
+  drag: (phase: "start" | "move" | "end", x = 0, y = 0) => ipcRenderer.send("drag", phase, x, y),
+  typing: (on: boolean) => ipcRenderer.send("typing", on)
 })
