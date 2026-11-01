@@ -2,18 +2,16 @@ import { app, desktopCapturer, globalShortcut, ipcMain, Menu, shell, systemPrefe
 import { execFile, spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
-import { Assistant, AnswerHandlers, Thread } from "./assistant"
 import { captureArea, clearArea, pickArea } from "./capture"
 import { getConfig, HOME_DIR, loadConfig, watchConfig } from "./config"
-import { extract, Extracted } from "./extract"
 import { GroupStatus, Inbox } from "./inbox"
+import { Handlers, Session, SessionView } from "./session"
 import { WindowHelper } from "./WindowHelper"
 
-type Status = "idle" | "reading" | "routing" | "thinking" | "answering" | "error"
+type Status = "idle" | "reading" | "thinking" | "answering" | "error"
 
 const overlay = new WindowHelper()
-const assistant = new Assistant()
-const pending = new Map<string, Promise<Extracted>>()
+const session = new Session() // one continuing conversation until End
 let queue: Promise<void> = Promise.resolve()
 
 const state = {
@@ -52,26 +50,20 @@ function notice(text: string): void {
   push()
 }
 
-function showThread(t: Thread | null): void {
-  state.thread = t && {
-    id: t.id,
-    title: t.title,
-    iterations: t.iterations.map((i) => ({ at: i.at, kind: i.kind, answer: i.answer, diagrams: i.diagrams }))
+// the panel's "thread" is the current session; each turn is one screenshot group or question
+function showSession(v: SessionView): void {
+  state.thread = {
+    id: v.id,
+    title: v.title,
+    iterations: v.turns.map((t) => ({ at: t.at, kind: t.kind, answer: t.answer, diagrams: t.shots }))
   }
 }
 
-const handlers: AnswerHandlers = {
+const handlers: Handlers = {
   onStatus: (s) => {
     state.status = s
     state.statusSince = Date.now()
     push()
-  },
-  onThread: (t, isNew) => {
-    showThread(t)
-    state.viewIndex = -1
-    state.live = ""
-    state.thinking = ""
-    notice(isNew ? `✦ New thread: ${t.title}` : `↻ Continuing: ${t.title} — iteration ${t.iterations.length + 1}`)
   },
   onThinking: (summary) => {
     state.thinking = summary
@@ -82,10 +74,11 @@ const handlers: AnswerHandlers = {
     state.thinking = ""
     push()
   },
-  onDone: (t) => {
+  onDone: (v) => {
     if (!overlay.visible) tray?.setTitle("SC ●") // an answer is waiting in the hidden panel
-    log(`answered: thread "${t.title}", iteration ${t.iterations.length}`)
-    showThread(t)
+    log(`answered: ${v.title}, turn ${v.turns.length}`)
+    showSession(v)
+    state.viewIndex = -1
     state.live = ""
     state.thinking = ""
     state.status = "idle"
@@ -110,6 +103,8 @@ function enqueue(job: () => Promise<void>): void {
   queue = queue.then(job).catch(fail)
 }
 
+// Groups and typed questions run one after another: anything that arrives while an answer is
+// streaming waits its turn and is answered next, in the same session.
 const inbox = new Inbox({
   onFile: (file) => {
     log(`screenshot added: ${path.basename(file)}`)
@@ -118,7 +113,6 @@ const inbox = new Inbox({
       overlay.show()
       tray?.setTitle("SC")
     }
-    pending.set(file, extract(file))
   },
   onGroup: (files) =>
     enqueue(async () => {
@@ -126,16 +120,9 @@ const inbox = new Inbox({
       state.status = "reading"
       state.statusSince = Date.now()
       state.error = null
+      state.payload = `${files.length} screenshot(s) sent as images:\n` + files.map((f) => `- ${path.basename(f)}`).join("\n")
       push()
-      const tRead = Date.now()
-      const group = await Promise.all(files.map((f) => pending.get(f) ?? extract(f)))
-      console.log(`[timing] reading screenshots ${((Date.now() - tRead) / 1000).toFixed(1)}s`)
-      files.forEach((f) => pending.delete(f))
-      const redactions = group.reduce((a, g) => a + g.redactions, 0)
-      state.payload =
-        group.map((g) => g.markdown).join("\n\n---\n\n") +
-        `\n\n_${group.reduce((a, g) => a + g.diagrams.length, 0)} diagram image(s) · ${redactions} redaction(s)_`
-      await assistant.handleGroup(group, handlers)
+      await session.addScreens(files, handlers)
     }),
   onStatus: (s) => {
     state.group = s
@@ -162,15 +149,13 @@ const keys: Record<string, () => void> = {
     notice("Capture area cleared: whole screen under the cursor")
   },
   Return: () => inbox.close(),
-  N: () => {
-    assistant.startNewThread()
-    showThread(null)
-    state.viewIndex = -1
-    notice("✦ Next screenshots start a new thread")
-  },
-  J: () =>
+  E: () =>
     enqueue(async () => {
-      if (!(await assistant.joinPrevious(handlers))) notice("Nothing to move back")
+      const v = session.end()
+      showSession(v)
+      state.viewIndex = -1
+      log(`session ended; new ${v.title}`)
+      notice("Session ended — the next screenshot or question starts a new one")
     }),
   H: () => {
     overlay.toggleVisible()
@@ -238,7 +223,7 @@ function createTray(): void {
       { label: "Choose capture area  ⌃⌥⌘A", click: keys.A },
       { label: "Whole screen (clear area)  ⌃⌥⌘⇧A", click: keys["Shift+A"] },
       { label: "Send now  ⌃⌥⌘↩", click: keys.Return },
-      { label: "New thread  ⌃⌥⌘N", click: keys.N },
+      { label: "End session  ⌃⌥⌘E", click: keys.E },
       { label: "Show / hide overlay  ⌃⌥⌘H", click: keys.H },
       { type: "separator" },
       { label: "Open settings file", click: () => shell.openPath(path.join(HOME_DIR, "config.json")) },
@@ -259,19 +244,13 @@ ipcMain.handle("ask", (_e, q: string) => {
   state.asking = false
   overlay.focusForTyping(false)
   push()
-  if (q.trim()) enqueue(() => assistant.ask(q.trim(), handlers))
+  if (q.trim()) enqueue(() => session.ask(q.trim(), handlers))
 })
 ipcMain.handle("close-ask", () => {
   state.asking = false
   overlay.focusForTyping(false)
   push()
 })
-ipcMain.handle("open-thread", (_e, id: string) => {
-  showThread(assistant.open(id))
-  state.viewIndex = -1
-  push()
-})
-
 if (process.env.SC_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.SC_DEBUG_PORT)
 // One copy only. A second launch (opening the app, bin/sc show, macOS "Quit & Reopen") just tells
 // the running copy to show its panel and exits.
@@ -279,7 +258,7 @@ const primary = app.requestSingleInstanceLock()
 if (!primary) app.exit(0)
 
 // Opened outside the service while it isn't running: that copy lacks the service's environment
-// (Vertex login, log file), so start the service, which shows the panel, and exit.
+// (log file, working directory), so start the service, which shows the panel, and exit.
 const SERVICE_PLIST = path.join(HOME_DIR, "com.screencopilot.app.plist")
 if (primary && !process.env.SC_SERVICE && app.isPackaged && fs.existsSync(SERVICE_PLIST)) {
   app.releaseSingleInstanceLock()
@@ -313,7 +292,7 @@ app.whenReady().then(() => {
   createTray()
   registerShortcuts()
   inbox.start()
-  showThread(assistant.current)
+  showSession(session.view)
   checkScreenPermission()
 })
 

@@ -483,3 +483,32 @@ export async function extract(file: string): Promise<Extracted> {
   redactions += md.count
   return { file, markdown: md.text, diagrams, redactions }
 }
+
+// The screenshot itself, sent as-is except that text matching the redaction rules is blacked
+// out (located with local OCR) and very large captures are scaled to 2400px wide.
+export async function prepareImage(file: string): Promise<{ png: Buffer; redactions: number }> {
+  const { redact: phrases, redactRegex } = getConfig()
+  let png = await sharp(file).png().toBuffer()
+  let redactions = 0
+  if (phrases.length || redactRegex.length) {
+    const ocr = await runOcr(file)
+    const boxes: Box[] = []
+    for (const p of ocr.paragraphs)
+      for (const l of p.lines) {
+        const r = redact(l.text)
+        if (r.count) {
+          redactions += r.count
+          boxes.push(l.box)
+        }
+      }
+    if (boxes.length) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.floor(ocr.width)}" height="${Math.floor(ocr.height)}">${boxes
+        .map(([x, y, w, h]) => `<rect x="${x - 3}" y="${y - 3}" width="${w + 6}" height="${h + 6}" fill="black"/>`)
+        .join("")}</svg>`
+      png = await sharp(png).composite([{ input: Buffer.from(svg) }]).png().toBuffer()
+    }
+  }
+  const meta = await sharp(png).metadata()
+  if ((meta.width ?? 0) > 2400) png = await sharp(png).resize({ width: 2400 }).png().toBuffer()
+  return { png, redactions }
+}

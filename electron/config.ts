@@ -21,6 +21,7 @@ export type Config = {
   windowBounds?: { x: number; y: number; width: number; height: number }
   gcpProject: string
   gcpRegion: string
+  provider: string // pi-ai provider: "openai", "google", "anthropic", ...
   answerModel: string
   routerModel: string
   effort: "low" | "medium" | "high" | "xhigh" | "max"
@@ -39,7 +40,8 @@ const DEFAULTS: Config = {
   startHidden: true,
   gcpProject: process.env.GOOGLE_CLOUD_PROJECT || "",
   gcpRegion: "global",
-  answerModel: "claude-opus-5-5",
+  provider: "openai",
+  answerModel: "gpt-5.5",
   routerModel: "claude-haiku-5-5",
   effort: "high"
 }

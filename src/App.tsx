@@ -3,7 +3,7 @@ import Markdown from "./Markdown"
 
 type Iteration = { at: number; kind: string; answer: string; diagrams: number }
 type State = {
-  status: "idle" | "reading" | "routing" | "thinking" | "answering" | "error"
+  status: "idle" | "reading" | "thinking" | "answering" | "error"
   error: string | null
   group: { count: number; closesAt: number | null; paused: boolean }
   notice: string | null
@@ -37,8 +37,7 @@ declare global {
 
 const STATUS: Record<State["status"], string> = {
   idle: "",
-  reading: "Reading screenshots…",
-  routing: "Matching to a thread…",
+  reading: "Sending screenshots…",
   thinking: "Thinking…",
   answering: "Answering…",
   error: "Error"
@@ -48,8 +47,7 @@ const HOTKEYS: [string, string][] = [
   ["S", "screenshot"],
   ["A", "choose area"],
   ["↩", "send now"],
-  ["N", "new thread"],
-  ["J", "join previous"],
+  ["E", "end session"],
   ["K", "ask"],
   ["←/→", "history"],
   ["↑/↓", "scroll"],
@@ -126,7 +124,7 @@ export default function App() {
       {/* only the header and the scroll rail take the mouse; clicks anywhere else reach the app behind */}
       <header {...hit} {...drag} onWheel={(e) => body.current?.scrollBy({ top: e.deltaY })}>
         <span className={`dot ${s.status}`} />
-        <span className="title">{s.thread?.title ?? "No thread yet"}</span>
+        <span className="title">{s.thread?.title ?? "New session"}</span>
         {its.length > 0 && (
           <span className="pill">
             {s.live ? its.length + 1 : idx + 1}/{s.live ? its.length + 1 : its.length}
@@ -150,8 +148,8 @@ export default function App() {
           <button title="Screenshot now (⌃⌥⌘S)" onClick={() => window.copilot.action("S")}>
             📷
           </button>
-          <button title="New thread (⌃⌥⌘N)" onClick={() => window.copilot.action("N")}>
-            ＋
+          <button title="End this session; the next screenshot starts a new one (⌃⌥⌘E)" onClick={() => window.copilot.action("E")}>
+            End
           </button>
           <button className="hide" title="Hide panel — bring it back with ⌃⌥⌘H or the SC menu" onClick={() => window.copilot.action("H")}>
             ✕
@@ -171,7 +169,7 @@ export default function App() {
       <div className="body" ref={body}>
         {s.showPayload ? (
           <>
-            <div className="label">Last text sent to the model</div>
+            <div className="label">Last sent to the model</div>
             <pre className="payload">{s.payload ?? "Nothing sent yet."}</pre>
           </>
         ) : s.thinking && !s.live ? (

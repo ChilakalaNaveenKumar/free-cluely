@@ -1,6 +1,6 @@
 # Screen Copilot
 
-A fork of [free-cluely](https://github.com/Prat011/free-cluely). Take screenshots with a hotkey or a mouse button. They are grouped, turned into text and diagram crops on your Mac, redacted, and answered by Claude Opus on Vertex AI. The answer appears in an overlay that screen shares and recordings don't capture.
+A fork of [free-cluely](https://github.com/Prat011/free-cluely). Take screenshots with a hotkey or a mouse button. They are grouped and sent as images (redaction-matching text blacked out locally) to the model in your config (default OpenAI gpt-5.5, through the pi-ai library), all in one session until you press End. The answer appears in an overlay that screen shares and recordings don't capture.
 
 ## Run it in the background
 
@@ -37,11 +37,11 @@ Settings live in `~/.screen-copilot/config.json` and are re-read on save:
 | `redact` / `redactRegex` | phrases (case- and spacing-insensitive) and regexes removed before anything is sent |
 | `extractDiagrams` | send diagram regions as cropped images |
 | `opacity` | panel tint over the blurred background |
-| `gcpProject`, `gcpRegion`, `answerModel`, `routerModel`, `effort` | Vertex settings |
+| `provider`, `answerModel` | model for answers (pi-ai provider and model id); keys go in `.env` (`OPENAI_API_KEY=…`, gitignored) |
 
 ## Hotkeys (⌃⌥⌘ +)
 
-`S` screenshot · `A` choose area · `⇧A` clear area · `↩` send now · `N` new thread · `J` move the last group back to the previous thread · `K` ask a follow-up · `←/→` previous/next answer · `↑/↓` scroll · `⇧+arrows` move the panel · `I` interactive (drag/click) · `-`/`=` opacity · `P` pause · `⌫` drop the last screenshot · `D` show the text that was sent · `H` hide
+`S` screenshot · `A` choose area · `⇧A` clear area · `↩` send now · `E` end session (the next screenshot starts a fresh one) · `K` ask a follow-up · `←/→` previous/next answer · `↑/↓` scroll · `⇧+arrows` move the panel · `I` interactive (drag/click) · `-`/`=` opacity · `P` pause · `⌫` drop the last screenshot · `D` show the text that was sent · `H` hide
 
 The panel lets clicks through to the apps behind it. Only the header (buttons: ⌖ Area, ⛶ whole screen, 📷 screenshot, ＋ new thread, ✕ hide) and a thin strip on the right edge (trackpad scroll) catch the mouse. The same actions are in the **SC** menu-bar item.
 
